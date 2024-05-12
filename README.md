@@ -1,1 +1,1 @@
-# opengl_font_stbtt
+ported https://github.com/arkanis/gl-4.5-subpixel-text-rendering for odin
