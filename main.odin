@@ -4,7 +4,6 @@ import      "core:fmt"
 import      "base:runtime"
 import      "core:mem"
 import gl   "vendor:OpenGl"
-import      "core:strings"
 import      "core:os"
 import      "core:math"
 import glfw "vendor:glfw"
@@ -31,6 +30,7 @@ rect_instance :: struct  #packed {
     tex_coords : rect4i16,
     color           : color_t,
     subpixel_shift  : f32,
+    index      : u32,
 }
 
 app : app_state
@@ -38,20 +38,19 @@ app : app_state
 
 
 app_state :: struct{
-    builder : strings.Builder,
     font_info : stbtt.fontinfo,
     glyph_atlas_items : [127]glyph_atlas_item,
     glyph_atlas_width  : i32 ,
     glyph_atlas_height : i32 ,
     glyph_atlas_texture : u32,
-    rect_buffer : [25500]rect_instance,
-    rect_buffer_filled : i32,
+    rect_buffer : [dynamic]rect_instance,
     rect_instances_vbo : u32,
     vao : u32,
     program_id: u32,
     pos_x  :f32,
     pos_y  :f32,
     font_size_pt : f32,
+    gap_buf      : GapBuf,
 }
 
 
@@ -85,14 +84,19 @@ scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
 render_font :: proc (){
 
     using app
-    text := strings.to_string(builder)
+    text := string(gap_buf.buf)
+
+    if gap_buf.gap == gap_buf.total{
+	return
+    }
     coverage_adjustment  :f32 =  0.0
-    text_color : color_t = {218, 218 , 218, 255}
+    text_color : color_t = {255, 255, 255 , 255}
     font_data, _ := os.read_entire_file_from_filename("C:/Windows/Fonts/Consola.ttf")
     stbtt.InitFont(&font_info, &font_data[0], 0)
 
     //text : string = "The quick brown fox \n jumps over the lazy dog.i Appple mangoe fwejalfjwlf w g rjl \n fjewlfwe"
 
+    rect_buffer = make([dynamic]rect_instance, 0, 1000)
     {
 	//put every glyph in text into rect_buffer
 
@@ -117,6 +121,11 @@ render_font :: proc (){
 
 	prev_codepoint : rune = 0
 
+	if recalc{
+	    delete(rect_buffer)
+	    rect_buffer = make([dynamic]rect_instance, 0, 1000)
+	}
+
 	for c, i in text {
 	    codepoint := u32(c)
 
@@ -131,6 +140,8 @@ render_font :: proc (){
 		//Handle line breaks
 		current_x = pos_x
 		current_y += math.round(line_height)
+	    } else if c == '\t'{
+		current_x +=  8 * font_size_pt
 	    }else{
 
 		horizontal_filter_padding, subpixel_positioning_left_padding : i32 = 1 , 1
@@ -192,6 +203,7 @@ render_font :: proc (){
 					     )
 
 			atlas_item_bitmap, _ := mem.alloc_bytes(int(bitmap_size))
+
 
 			filter_weights : [5]u8 = { 0x08, 0x4D, 0x56, 0x4D, 0x08 };
 
@@ -274,8 +286,8 @@ render_font :: proc (){
 		    r.subpixel_shift = glyph_pos_x_subpixel_shift;
 		    r.tex_coords     = glyph_atlas.tex_coords;
 		    r.color          = text_color;
-		    rect_buffer[rect_buffer_filled] = r
-		    rect_buffer_filled += 1
+		    r.index          = u32(i+1)
+		    append(&rect_buffer, r)
 		}
 
 		current_x += f32(glyph_advance_width) * font_scale
@@ -292,7 +304,7 @@ render_font :: proc (){
 	// Upload the rect buffer to the GPU.
 	// Allow the GPU driver to create a new buffer storage for each draw command. That way it doesn't have to wait for
 	// the previous draw command to finish to reuse the same buffer storage.
-	gl.NamedBufferData(rect_instances_vbo, int(rect_buffer_filled * size_of(rect_buffer[0])), &rect_buffer, gl.DYNAMIC_DRAW);
+	gl.NamedBufferData(rect_instances_vbo, int(len(rect_buffer) * size_of(rect_buffer[0])), &rect_buffer[0], gl.DYNAMIC_DRAW);
 	
 	// Setup pre-multiplied alpha blending (that's why the source factor is GL_ONE) with dual source blending so we can blend
 	// each subpixel individually for subpixel anti-aliased glyph rendering (that's what GL_ONE_MINUS_SRC1_COLOR does).
@@ -308,14 +320,14 @@ render_font :: proc (){
 	gl.UseProgram(program_id);
 	gl.ProgramUniform2f(program_id, 0, f32(window_width) / 2.0, f32(window_height) / 2.0);
 	gl.ProgramUniform1f(program_id, 1, coverage_adjustment);
+	gl.ProgramUniform1ui(program_id, 2, app.gap_buf.front);
 	gl.BindTextureUnit(0, glyph_atlas_texture);
-	gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, rect_buffer_filled);
+	gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, i32(len(rect_buffer)));
 	gl.UseProgram(0);
 	gl.BindVertexArray(0);
 	
 	// We don't need the contents of the CPU or GPU buffer anymore
 	gl.InvalidateBufferData(rect_instances_vbo);
-	rect_buffer_filled = 0;
 	glfw.SwapBuffers(window)
     }
     redraw = false
@@ -368,17 +380,23 @@ viewport_callback :: proc "c" (window: glfw.WindowHandle, x, y: i32){
 char_callback :: proc "c" (window : glfw.WindowHandle, codepoint: rune){
     context = runtime.default_context()
 
-    strings.write_rune(&app.builder, codepoint)
+    gapbuf_insert(&app.gap_buf, u8(codepoint))
     redraw = true
 }
 
 keyboard_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods : i32){
     context = runtime.default_context()
     if key == glfw.KEY_BACKSPACE && action == glfw.PRESS{
-	strings.pop_rune(&app.builder)
+	gapbuf_backspace(&app.gap_buf)
     }
     if key == glfw.KEY_ENTER && action == glfw.PRESS{
-	strings.write_rune(&app.builder, '\n')
+	gapbuf_insert(&app.gap_buf, '\n')
+    }
+    if key == glfw.KEY_TAB && action == glfw.PRESS{
+	gapbuf_insert(&app.gap_buf, '\t')
+    }
+    if key == glfw.KEY_LEFT && action == glfw.PRESS{
+	gapbuf_backward(&app.gap_buf)
     }
 
     redraw = true
@@ -390,6 +408,7 @@ main :: proc(){
     if !bool(glfw.Init()){
 	return
     }
+
 
     //sdl.Init({.VIDEO})
 
@@ -416,9 +435,11 @@ main :: proc(){
 
     using app
 
+    gapbuf_init(&gap_buf, 200)
+
     glyph_atlas_width  = 512
     glyph_atlas_height = 512
-    font_size_pt = 10
+    font_size_pt = 14
 
     program_id, _ = gl.load_shaders_file("vert.glsl", "frag.glsl")
 
@@ -472,10 +493,13 @@ main :: proc(){
     // read 4 unsigned bytes starting at the offset of the "color" member, convert them to float and normalize the value range 0..255 to 0..1.
     gl.VertexArrayAttribFormat( vao, 3, 4, gl.UNSIGNED_BYTE, true, u32(offset_of(rect_instance, color)));  
     // layout(location = 4) in float rect_subpixel_shift
+    gl.EnableVertexArrayAttrib( vao, 5);     // read it from a data source
+    gl.VertexArrayAttribBinding(vao, 5, 1);  // read from data source 1
+    gl.VertexArrayAttribFormat( vao, 5, 1, gl.FLOAT, false , u32(offset_of(rect_instance, subpixel_shift)));
+
     gl.EnableVertexArrayAttrib( vao, 4);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 4, 1);  // read from data source 1
-    gl.VertexArrayAttribFormat( vao, 4, 1, gl.FLOAT, false , u32(offset_of(rect_instance, subpixel_shift)));
-
+    gl.VertexArrayAttribIFormat( vao, 4, 1, gl.UNSIGNED_INT, u32(offset_of(rect_instance, index)));
 
 
     gl.CreateTextures(gl.TEXTURE_RECTANGLE, 1, &glyph_atlas_texture)
@@ -485,12 +509,8 @@ main :: proc(){
 
 
 
-    //strings
-    strings.builder_init_none(&builder)
 
-    file_data, _ := os.read_entire_file_from_filename("main.odin")
-    strings.write_bytes(&builder, file_data)
-
+    file_data, _ := os.read_entire_file_from_filename("test.odin")
 
     
     for !glfw.WindowShouldClose(window){
