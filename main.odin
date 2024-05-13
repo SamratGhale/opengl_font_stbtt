@@ -44,11 +44,14 @@ app_state :: struct{
     glyph_atlas_width  : i32 ,
     glyph_atlas_height : i32 ,
     glyph_atlas_texture : u32,
-    rect_buffer : [255]rect_instance,
+    rect_buffer : [25500]rect_instance,
     rect_buffer_filled : i32,
     rect_instances_vbo : u32,
     vao : u32,
     program_id: u32,
+    pos_x  :f32,
+    pos_y  :f32,
+    font_size_pt : f32,
 }
 
 
@@ -60,14 +63,33 @@ glyph_atlas_item :: struct {
     distance_from_baseline_to_top_px: i32,
 }
 
+recalc := false
+scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
+    //state.pos = {x, y}
+    //gl.Viewport(0, 0, x, y);
+
+    //if ctrol is down
+    if glfw.GetKey(window, glfw.KEY_LEFT_CONTROL) == glfw.PRESS{
+	app.font_size_pt += f32(y)
+	recalc = true
+    }else{
+	app.pos_y += f32(y * 20)
+    }
+
+
+
+    //state.world.scale.z += f32(y) * 0.05
+    redraw = true
+}
+
 render_font :: proc (){
 
     using app
     text := strings.to_string(builder)
-    pos_x  :f32 =  10
-    pos_y  :f32 =  10
     coverage_adjustment  :f32 =  0.0
     text_color : color_t = {218, 218 , 218, 255}
+    font_data, _ := os.read_entire_file_from_filename("C:/Windows/Fonts/Consola.ttf")
+    stbtt.InitFont(&font_info, &font_data[0], 0)
 
     //text : string = "The quick brown fox \n jumps over the lazy dog.i Appple mangoe fwejalfjwlf w g rjl \n fjewlfwe"
 
@@ -78,7 +100,6 @@ render_font :: proc (){
 
 	//From "Font size in pixels or points" in stb_truetype
 
-	font_size_pt :f32 = 20
 	font_size_px := font_size_pt * 1.3333
 	font_scale   := stbtt.ScaleForMappingEmToPixels(&font_info, font_size_px)
 
@@ -118,9 +139,11 @@ render_font :: proc (){
 
 		glyph_atlas := glyph_atlas_items[codepoint] 
 
-		if glyph_atlas.filled{
+		if glyph_atlas.filled && !recalc{
 		    //The atlas item for this codepoint is already filled so we already rasterized the glyph, put it in the relevane data in an atlas item. Everything is already done, so just use the atlas item
-		}else{
+
+		}else
+		{
 		    glyph_index := stbtt.FindGlyphIndex(&font_info, c)
 
 		    x0, y0, x1, y1 :i32 = 0, 0, 0, 0
@@ -296,6 +319,7 @@ render_font :: proc (){
 	glfw.SwapBuffers(window)
     }
     redraw = false
+    recalc = false
 }
 
 
@@ -377,6 +401,7 @@ main :: proc(){
     glfw.MakeContextCurrent(window)
     glfw.SwapInterval(1)
     glfw.SetWindowSizeCallback(window, viewport_callback)
+    glfw.SetScrollCallback(window, scroll_callback);
     glfw.SetCharCallback(window, char_callback)
     glfw.SetKeyCallback(window, keyboard_callback)
 
@@ -393,6 +418,7 @@ main :: proc(){
 
     glyph_atlas_width  = 512
     glyph_atlas_height = 512
+    font_size_pt = 10
 
     program_id, _ = gl.load_shaders_file("vert.glsl", "frag.glsl")
 
@@ -458,11 +484,12 @@ main :: proc(){
 
 
 
-    font_data, _ := os.read_entire_file_from_filename("Ubuntu-R.ttf")
-    stbtt.InitFont(&font_info, &font_data[0], 0)
 
     //strings
     strings.builder_init_none(&builder)
+
+    file_data, _ := os.read_entire_file_from_filename("main.odin")
+    strings.write_bytes(&builder, file_data)
 
 
     

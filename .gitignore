@@ -3,3 +3,4 @@ imgui.ini
 /bin
 *.exe
 /.vs/
+/odin-imgui
