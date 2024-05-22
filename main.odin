@@ -10,9 +10,11 @@ import glfw "vendor:glfw"
 import stbtt "vendor:stb/truetype"
 
 /*
-  Create a memory (u8 array) to store text 
-
-
+TODO:
+	 Render cursor ahead of front 
+	 TOP and BUTTOM movement
+BUGS:
+	 FIX the issue causing the app to not work on windows with intel
 */
 
 window : glfw.WindowHandle
@@ -84,7 +86,7 @@ scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
 render_font :: proc (){
 
     using app
-    text := string(gap_buf.buf)
+    text := get_string(&gap_buf)
 
     if gap_buf.gap == gap_buf.total{
 	return
@@ -399,6 +401,9 @@ keyboard_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action,
 	gapbuf_backward(&app.gap_buf)
     }
 
+    if key == glfw.KEY_RIGHT && action == glfw.PRESS{
+	gapbuf_frontward(&app.gap_buf)
+    }
     redraw = true
 }
 
@@ -415,7 +420,7 @@ main :: proc(){
     glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 4)
     glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 5)
     glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
-    window = glfw.CreateWindow(window_width, window_height, "Font stuffs!", nil, nil) 
+    window = glfw.CreateWindow(window_width, window_height, "Nu code editor!", nil, nil) 
 
     glfw.MakeContextCurrent(window)
     glfw.SwapInterval(1)
@@ -445,8 +450,8 @@ main :: proc(){
 
 
     index_xy :: struct {
-	ltrb_index_y : u16,
-	ltrb_index_x : u16,
+    	ltrb_index_y : u16,
+    	ltrb_index_x : u16,
     }
 
     rect_vertices : [6] index_xy = {
@@ -462,11 +467,7 @@ main :: proc(){
     gl.CreateBuffers(1, &rect_vertices_vbo)
     gl.NamedBufferStorage(rect_vertices_vbo, size_of(rect_vertices), &rect_vertices[0], 0)
 
-
-
-
     gl.CreateBuffers(1, &rect_instances_vbo)
-
     gl.CreateVertexArrays(1, &vao)
     gl.VertexArrayVertexBuffer(vao, 0, rect_vertices_vbo, 0, size_of(rect_vertices[0]))
     gl.VertexArrayVertexBuffer(vao, 1, rect_instances_vbo, 0, size_of(rect_instance));   // Set data source 1 to rect_instances_vbo, with offset 0 and proper stride
@@ -504,11 +505,6 @@ main :: proc(){
 
     gl.CreateTextures(gl.TEXTURE_RECTANGLE, 1, &glyph_atlas_texture)
     gl.TextureStorage2D(glyph_atlas_texture, 1, gl.RGB8, glyph_atlas_width , glyph_atlas_height)
-
-
-
-
-
 
     file_data, _ := os.read_entire_file_from_filename("test.odin")
 
