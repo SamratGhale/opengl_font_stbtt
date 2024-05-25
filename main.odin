@@ -12,13 +12,20 @@ import stbtt "vendor:stb/truetype"
 /*
   Create a memory (u8 array) to store text 
 
+  Make a different opengl program to render cursor or other stuffs
+
+  UseProgram(cursor_program)
+  
+  Calculate the x and y from the rect_ltrb like in the vert.glsl in cpu
+  RenderCursor(x, y, width, height)
+
 
 */
 
 window : glfw.WindowHandle
 
 rect4i16 :: [4]i16
-color_t :: [4]u8
+color_t :: [4]i16
 
 
 window_height :i32= 800
@@ -51,6 +58,8 @@ app_state :: struct{
     pos_y  :f32,
     font_size_pt : f32,
     gap_buf      : GapBuf,
+
+    cursor_program_id : u32,
 }
 
 
@@ -90,11 +99,10 @@ render_font :: proc (){
 	return
     }
     coverage_adjustment  :f32 =  0.0
-    text_color : color_t = {255, 255, 255 , 255}
+    text_color : color_t = {1, 1, 1, 1}
     font_data, _ := os.read_entire_file_from_filename("C:/Windows/Fonts/Consola.ttf")
     stbtt.InitFont(&font_info, &font_data[0], 0)
 
-    //text : string = "The quick brown fox \n jumps over the lazy dog.i Appple mangoe fwejalfjwlf w g rjl \n fjewlfwe"
 
     rect_buffer = make([dynamic]rect_instance, 0, 1000)
     {
@@ -441,7 +449,9 @@ main :: proc(){
     glyph_atlas_height = 512
     font_size_pt = 14
 
-    program_id, _ = gl.load_shaders_file("vert.glsl", "frag.glsl")
+    program_id, _ = gl.load_shaders_file("font_vert.glsl", "font_frag.glsl")
+
+    cursor_program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
 
 
     index_xy :: struct {
@@ -491,7 +501,7 @@ main :: proc(){
     gl.VertexArrayAttribBinding(vao, 3, 1);  // read from data source 1
 
     // read 4 unsigned bytes starting at the offset of the "color" member, convert them to float and normalize the value range 0..255 to 0..1.
-    gl.VertexArrayAttribFormat( vao, 3, 4, gl.UNSIGNED_BYTE, true, u32(offset_of(rect_instance, color)));  
+    gl.VertexArrayAttribFormat( vao, 3, 4, gl.SHORT, false, u32(offset_of(rect_instance, color)));  
     // layout(location = 4) in float rect_subpixel_shift
     gl.EnableVertexArrayAttrib( vao, 5);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 5, 1);  // read from data source 1
@@ -509,8 +519,6 @@ main :: proc(){
 
 
 
-
-    file_data, _ := os.read_entire_file_from_filename("test.odin")
 
     
     for !glfw.WindowShouldClose(window){
