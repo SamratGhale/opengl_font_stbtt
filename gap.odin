@@ -2,6 +2,7 @@ package main
 
 import "core:mem"
 import intr "base:intrinsics"
+import "core:strings"
 
 GapBuf :: struct {
     buf : []u8,
@@ -99,12 +100,33 @@ gapbuf_delete :: proc(b: ^GapBuf){
     }
 }
 
-//delete like backspace
+//move like backspace
 gapbuf_backspace :: proc(b: ^GapBuf){
     if b.front > 0{
 	b.front -=1
 	b.gap   += 1
     }
+}
+
+//delete like backspace
+gapbuf_frontward:: proc(b: ^GapBuf){
+    if b.front < b.total {
+	b.buf[b.front] = b.buf[b.front+ b.gap]
+	b.front+=1
+    }
+}
+
+//Returns the string to be rendered of the gap buffer
+get_string :: proc(g: ^GapBuf) -> string{
+	using strings
+	builder : Builder
+	builder_init_none(&builder)
+
+	write_bytes(&builder, g.buf[0:g.front])
+	write_bytes(&builder, g.buf[int(g.front + g.gap): g.total])
+
+	res := to_string(builder)
+	return res
 }
 
 
