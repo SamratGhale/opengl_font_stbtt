@@ -1,4 +1,5 @@
 #version 450 core
+#extension GL_ARB_texture_rectangle: enable
 
 layout(location=1) uniform uint coverage_adjustment;
 layout(location=2) uniform uint  front_index; //gap buffer front
@@ -47,8 +48,5 @@ void main (){
     }
 
     fragment_color = color * vec4(pixel_coverages, 1);
-    if (index_out == front_index){
-      fragment_color = vec4(1.0 - fragment_color.r,1.0 - fragment_color.g,1.0 - fragment_color.b,1);
-    }
     blend_weights  = vec4(color.a * pixel_coverages, color.a);
 }

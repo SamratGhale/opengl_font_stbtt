@@ -14,8 +14,8 @@ import stbtt "vendor:stb/truetype"
 
 window : glfw.WindowHandle
 
-rect4i16 :: [4]i16
-color_t :: [4]i16
+rect4i16 :: [4]f32
+color_t :: [4]f32
 
 
 window_height :i32= 800
@@ -25,9 +25,9 @@ window_width  :i32= 1000
 rect_instance :: struct  #packed {
     pos        : rect4i16,
     tex_coords : rect4i16,
-    color           : color_t,
-    subpixel_shift  : f32,
+    color      : color_t,
     index      : u32,
+    subpixel_shift  : f32,
 }
 
 app : app_state
@@ -242,10 +242,10 @@ render_font :: proc (){
 			gl.TextureSubImage2D(glyph_atlas_texture, 0, atlas_item_x, atlas_item_y, atlas_item_width, atlas_item_height, gl.RGB, gl.UNSIGNED_BYTE, rawptr(&atlas_item_bitmap[0]))
 
 			mem.free_bytes(atlas_item_bitmap)
-			glyph_atlas.tex_coords[0]     = i16(atlas_item_x)
-			glyph_atlas.tex_coords[1]     = i16(atlas_item_y)
-			glyph_atlas.tex_coords[2]     = i16(atlas_item_x + padded_glyph_width_px)
-			glyph_atlas.tex_coords[3]     = i16(atlas_item_y + padded_glyph_height_px)
+			glyph_atlas.tex_coords[0]     = f32(atlas_item_x)
+			glyph_atlas.tex_coords[1]     = f32(atlas_item_y)
+			glyph_atlas.tex_coords[2]     = f32(atlas_item_x + padded_glyph_width_px)
+			glyph_atlas.tex_coords[3]     = f32(atlas_item_y + padded_glyph_height_px)
 		    } else {
 			glyph_atlas.tex_coords[0]  = -1 
 			glyph_atlas.tex_coords[1]  = -1 
@@ -276,10 +276,10 @@ render_font :: proc (){
 
 		    r :  rect_instance 
 
-		    r.pos[0] = i16(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding));;
-		    r.pos[1] = i16(glyph_pos_y_px);
-		    r.pos[2] = i16(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding) + f32(glyph_width_with_horiz_filter_padding))
-		    r.pos[3] = i16(glyph_pos_y_px + f32(glyph_height));
+		    r.pos[0] = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding));;
+		    r.pos[1] = f32(glyph_pos_y_px);
+		    r.pos[2] = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding) + f32(glyph_width_with_horiz_filter_padding))
+		    r.pos[3] = f32(glyph_pos_y_px + f32(glyph_height));
 
 		    r.subpixel_shift = glyph_pos_x_subpixel_shift;
 		    r.tex_coords     = glyph_atlas.tex_coords;
@@ -295,6 +295,7 @@ render_font :: proc (){
     {
 	gl.ClearColor(0.25, 0.25, 0.25, 1.0);
 
+
 	gl.Clear(gl.COLOR_BUFFER_BIT);
 
 
@@ -309,6 +310,7 @@ render_font :: proc (){
 	gl.Enable(gl.BLEND);
 	gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC1_COLOR);
 
+
 	
 	gl.BindVertexArray(vao);
 	// layout(location = 0) uniform vec2 half_viewport_size
@@ -317,10 +319,9 @@ render_font :: proc (){
 	// layout(location = 1) uniform float coverage_adjustment
 	gl.UseProgram(program_id);
 	gl.ProgramUniform2f(program_id, 0, f32(window_width) / 2.0, f32(window_height) / 2.0);
-	gl.ProgramUniform1f(program_id, 1, coverage_adjustment);
+	gl.ProgramUniform1ui(program_id, 1, u32(coverage_adjustment));
 	gl.ProgramUniform1ui(program_id, 2, app.gap_buf.front);
 	gl.BindTextureUnit(0, glyph_atlas_texture);
-	gl.ActiveTexture(gl.TEXTURE0);
 	//gl.BindTexture(gl.TEXTURE_2D, glyph_atlas_texture);
 	//gl.ProgramUniform1i(program_id, 3, i32(glyph_atlas_texture));
 	gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, i32(len(rect_buffer)));
@@ -417,6 +418,8 @@ main :: proc(){
     //sdl.Init({.VIDEO})
 
     glfw.WindowHint(glfw.CONTEXT_VERSION_MAJOR, 4)
+    glfw.WindowHint(glfw.OPENGL_DEBUG_CONTEXT, gl.TRUE);
+
     glfw.WindowHint(glfw.CONTEXT_VERSION_MINOR, 5)
     glfw.WindowHint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
     window = glfw.CreateWindow(window_width, window_height, "Nu code editor!", nil, nil) 
@@ -447,61 +450,53 @@ main :: proc(){
 
     program_id, _ = gl.load_shaders_file("font_vert.glsl", "font_frag.glsl")
 
-    cursor_program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
+    //cursor_program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
 
 
-    index_xy :: struct {
-    	ltrb_index_y : u16,
-    	ltrb_index_x : u16,
-    }
-
-    rect_vertices : [6] index_xy = {
-	{0, 1}, //left top
-	{0, 3}, //left buttom
-	{2, 1}, //right top
-	{0, 3}, //Left buttom
-	{2, 3}, //right bottom
-	{2, 1}, //right top
-    }
-
-    rect_vertices_vbo : u32 = 0
-    gl.CreateBuffers(1, &rect_vertices_vbo)
-    gl.NamedBufferStorage(rect_vertices_vbo, size_of(rect_vertices), &rect_vertices[0], 0)
+    //gl.CreateBuffers(1, &rect_vertices_vbo)
+    //gl.NamedBufferStorage(rect_vertices_vbo, size_of(rect_vertices), &rect_vertices[0], 0)
 
     gl.CreateBuffers(1, &rect_instances_vbo)
     gl.CreateVertexArrays(1, &vao)
-    gl.VertexArrayVertexBuffer(vao, 0, rect_vertices_vbo, 0, size_of(rect_vertices[0]))
-    gl.VertexArrayVertexBuffer(vao, 1, rect_instances_vbo, 0, size_of(rect_instance));   // Set data source 1 to rect_instances_vbo, with offset 0 and proper stride
-    gl.VertexArrayBindingDivisor(vao, 1, 1);  // Advance data source 1 every 1 instance instead of for every vertex (3rd argument is 1 instead of 0)
+    //gl.VertexArrayVertexBuffer(vao, 0, rect_vertices_vbo, 0, size_of(index_xy))
+    gl.VertexArrayVertexBuffer(vao, 0, rect_instances_vbo, 0, size_of(rect_instance));   // Set data source 1 to rect_instances_vbo, with offset 0 and proper stride
+    gl.VertexArrayBindingDivisor(vao, 0, 1);  // Advance data source 1 every 1 instance instead of for every vertex (3rd argument is 1 instead of 0)
     // layout(location = 0) in uvec2 ltrb_index
-    gl.EnableVertexArrayAttrib( vao, 0);     // read ltrb_index from a data source
+    /*
+    gl.EnableVertexArrayAttrib(vao, 0);     // read ltrb_index from a data source
     gl.VertexArrayAttribBinding(vao, 0, 0);  // read from data source 0
-    gl.VertexArrayAttribIFormat(vao, 0, 2, gl.UNSIGNED_SHORT, 0);  // read 2 unsigned shorts starting at offset 0 and feed it into the vertex shader as integers instead of float (that's what the I means in glVertexArrayAttribIFormat)
+    gl.VertexArrayAttribIFormat(vao, 0, 2, gl.UNSIGNED_INT, 0);  // read 2 unsigned shorts starting at offset 0 and feed it into the vertex shader as integers instead of float (that's what the I means in glVertexArrayAttribIFormat)
+
+    */
     // layout(location = 1) in vec4  rect_ltrb
-    gl.EnableVertexArrayAttrib( vao, 1);     // read it from a data source
-    gl.VertexArrayAttribBinding(vao, 1, 1);  // read from data source 1
-    gl.VertexArrayAttribFormat( vao, 1, 4, gl.SHORT, false , 0);
+    gl.EnableVertexArrayAttrib( vao, 0);     // read it from a data source
+    gl.VertexArrayAttribBinding(vao, 0, 0);  // read from data source 1
+    gl.VertexArrayAttribFormat( vao, 0, 4, gl.FLOAT, false , 0);
     // layout(location = 2) in vec4  rect_tex_ltrb
 
-    gl.EnableVertexArrayAttrib( vao, 2);     // read it from a data source
-    gl.VertexArrayAttribBinding(vao, 2, 1);  // read from data source 1
+    gl.EnableVertexArrayAttrib( vao, 1);     // read it from a data source
+    gl.VertexArrayAttribBinding(vao, 1, 0);  // read from data source 1
 
-    gl.VertexArrayAttribFormat( vao, 2, 4, gl.SHORT, false , u32(offset_of(rect_instance, tex_coords)));
+    gl.VertexArrayAttribFormat( vao, 1, 4, gl.FLOAT, false , u32(offset_of(rect_instance, tex_coords)));
 
     // layout(location = 3) in vec4  rect_color
-    gl.EnableVertexArrayAttrib( vao, 3);     // read it from a data source
-    gl.VertexArrayAttribBinding(vao, 3, 1);  // read from data source 1
+    gl.EnableVertexArrayAttrib( vao, 2);     // read it from a data source
+    gl.VertexArrayAttribBinding(vao, 2, 0);  // read from data source 1
 
     // read 4 unsigned bytes starting at the offset of the "color" member, convert them to float and normalize the value range 0..255 to 0..1.
-    gl.VertexArrayAttribFormat( vao, 3, 4, gl.SHORT, false, u32(offset_of(rect_instance, color)));  
+    gl.VertexArrayAttribFormat( vao, 2, 4, gl.FLOAT, false, u32(offset_of(rect_instance, color)));  
     // layout(location = 4) in float rect_subpixel_shift
-    gl.EnableVertexArrayAttrib( vao, 5);     // read it from a data source
-    gl.VertexArrayAttribBinding(vao, 5, 1);  // read from data source 1
-    gl.VertexArrayAttribFormat( vao, 5, 1, gl.FLOAT, false , u32(offset_of(rect_instance, subpixel_shift)));
-
+    /*
     gl.EnableVertexArrayAttrib( vao, 4);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 4, 1);  // read from data source 1
     gl.VertexArrayAttribIFormat( vao, 4, 1, gl.UNSIGNED_INT, u32(offset_of(rect_instance, index)));
+    */
+
+
+    gl.EnableVertexArrayAttrib( vao, 3);     // read it from a data source
+    gl.VertexArrayAttribBinding(vao, 3, 0);  // read from data source 1
+    gl.VertexArrayAttribFormat( vao, 3, 1, gl.FLOAT, false , u32(offset_of(rect_instance, subpixel_shift)));
+
 
 
     gl.CreateTextures(gl.TEXTURE_RECTANGLE, 1, &glyph_atlas_texture)
