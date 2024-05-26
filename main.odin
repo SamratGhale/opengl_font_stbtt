@@ -320,6 +320,9 @@ render_font :: proc (){
 	gl.ProgramUniform1f(program_id, 1, coverage_adjustment);
 	gl.ProgramUniform1ui(program_id, 2, app.gap_buf.front);
 	gl.BindTextureUnit(0, glyph_atlas_texture);
+	gl.ActiveTexture(gl.TEXTURE0);
+	//gl.BindTexture(gl.TEXTURE_2D, glyph_atlas_texture);
+	//gl.ProgramUniform1i(program_id, 3, i32(glyph_atlas_texture));
 	gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, i32(len(rect_buffer)));
 	gl.UseProgram(0);
 	gl.BindVertexArray(0);
@@ -505,9 +508,12 @@ main :: proc(){
     gl.TextureStorage2D(glyph_atlas_texture, 1, gl.RGB8, glyph_atlas_width , glyph_atlas_height)
 
 
+
     
     for !glfw.WindowShouldClose(window){
 	glfw.PollEvents()
+
+
 
 
 

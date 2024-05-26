@@ -1,4 +1,6 @@
 #version 450 core
+#extension GL_ARB_texture_rectangle: enable
+
 
 layout(location=0) uniform vec2 half_viewport_size;
 
