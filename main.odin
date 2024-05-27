@@ -14,7 +14,9 @@ import stbtt "vendor:stb/truetype"
 
 window : glfw.WindowHandle
 
-rect4i16 :: [4]f32
+rect4i16 :: struct {
+	l, t, r, b: f32
+}
 color_t :: [4]f32
 
 vec3 :: [3]f32
@@ -95,33 +97,28 @@ scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
 init_cursor :: proc(){
 	using app.cursor
 
-	color := color_t{1, 1, 1, 1}
-	max_p : = vec3{10,10,10}
-	min_p : = vec3{1,1,1}
-	vertices := []f32 {
-	    max_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a, // top right
-	    max_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom right
-	    min_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom left
-	    min_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a // top left 
-	};
-
-
 	gl.CreateBuffers(1, &cursor_buf)
     gl.CreateVertexArrays(1, &vao)
-    gl.VertexArrayVertexBuffer(vao, 0, cursor_buf, 0, size_of(vertices)); 
+    gl.VertexArrayVertexBuffer(vao, 0, cursor_buf, 0, size_of(f32) * 7 ); 
+    //gl.VertexArrayBindingDivisor(vao, 0, 1);
 
     //POS
     gl.EnableVertexArrayAttrib( vao, 0);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 0, 0);  // read from data source 0
-    gl.VertexArrayAttribFormat( vao, 0, 2, gl.FLOAT, false , 0);
+    gl.VertexArrayAttribFormat( vao, 0, 3, gl.FLOAT, false , 0);
 
     gl.EnableVertexArrayAttrib( vao, 1);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 1, 0);  // read from data source 1
-    gl.VertexArrayAttribFormat( vao, 1, 4, gl.FLOAT, false, u32(offset_of(Cursor, color)));  
+    gl.VertexArrayAttribFormat( vao, 1, 4, gl.FLOAT, true, size_of(f32) * 3);  
 
 }
 
-render_cursor :: proc(){
+render_cursor :: proc(ret_i : rect_instance){
+	ret : = ret_i.pos
+	ret.l += 10
+	ret.r = ret.l + 10
+	ret.t = 1
+	ret.b = 20
 	using app.cursor
 
 
@@ -133,24 +130,28 @@ render_cursor :: proc(){
 		a, 0, 0, 0, 0, b, 0, 0, 0, 0, 1, 0, -1, -1, 0, 1,
 	};
 	//put cursor_program_id inside CursorGL
-	gl.ProgramUniformMatrix4fv(app.cursor_program_id, 0, 1, gl.FALSE,  &proj[0]);
 
 	color := color_t{1, 1, 1, 1}
-	max_p : = vec3{10,10,10}
-	min_p : = vec3{1,1,1}
+
+    gl.UseProgram(app.cursor_program_id)
 	vertices := []f32 {
-	    max_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a, // top right
-	    max_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom right
-	    min_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom left
-	    min_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a // top left 
+	    ret.l, ret.t, 0.0, color.r, color.g, color.b, color.a, // top right
+	    ret.l, ret.b, 0.0, color.r, color.g, color.b, color.a, // bottom right
+	    ret.r, ret.t, 0.0, color.r, color.g, color.b, color.a, // top left 
+
+	    ret.l,  ret.b, 0.0, color.r, color.g, color.b, color.a, // bottom right
+	    ret.r,  ret.b, 0.0, color.r, color.g, color.b, color.a, // bottom left
+	    ret.r,  ret.t, 0.0, color.r, color.g, color.b, color.a // top left 
 	};
 
 
 	//gl.ProgramUniform2f(program_id, 0, f32(window_width) / 2.0, f32(window_height) / 2.0);
-    gl.NamedBufferData(cursor_buf, size_of(vertices), &vertices, gl.DYNAMIC_DRAW)
+	gl.ProgramUniformMatrix4fv(app.cursor_program_id, 0, 1, gl.FALSE,  &proj[0]);
+    gl.NamedBufferData(cursor_buf, size_of(f32) * 6 * 7, &vertices[0], gl.DYNAMIC_DRAW)
     gl.BindVertexArray(vao)
-    gl.UseProgram(app.cursor_program_id)
-    gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, 1)
+    gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, 6)
+    //gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil);
+
     gl.UseProgram(0)
     gl.BindVertexArray(0)
 
@@ -170,6 +171,7 @@ render_font :: proc (){
     stbtt.InitFont(&font_info, &font_data[0], 0)
 
 
+	index_rect : rect_instance
     rect_buffer = make([dynamic]rect_instance, 0, 1000)
     {
 	//put every glyph in text into rect_buffer
@@ -189,6 +191,7 @@ render_font :: proc (){
 
 	//Keep track of the current position while we process glyph after glyph
 	current_x, current_y : f32 = pos_x, f32(pos_y) + math.round(baseline)
+
 
 
 	//iterate over the UTF-8 text codepoint by codepoint. A codepoint is basically 32 bit ID of a character as defined by Unicode
@@ -318,15 +321,15 @@ render_font :: proc (){
 			gl.TextureSubImage2D(glyph_atlas_texture, 0, atlas_item_x, atlas_item_y, atlas_item_width, atlas_item_height, gl.RGB, gl.UNSIGNED_BYTE, rawptr(&atlas_item_bitmap[0]))
 
 			mem.free_bytes(atlas_item_bitmap)
-			glyph_atlas.tex_coords[0]     = f32(atlas_item_x)
-			glyph_atlas.tex_coords[1]     = f32(atlas_item_y)
-			glyph_atlas.tex_coords[2]     = f32(atlas_item_x + padded_glyph_width_px)
-			glyph_atlas.tex_coords[3]     = f32(atlas_item_y + padded_glyph_height_px)
+			glyph_atlas.tex_coords.l     = f32(atlas_item_x)
+			glyph_atlas.tex_coords.t     = f32(atlas_item_y)
+			glyph_atlas.tex_coords.r     = f32(atlas_item_x + padded_glyph_width_px)
+			glyph_atlas.tex_coords.b     = f32(atlas_item_y + padded_glyph_height_px)
 		    } else {
-			glyph_atlas.tex_coords[0]  = -1 
-			glyph_atlas.tex_coords[1]  = -1 
-			glyph_atlas.tex_coords[2]  = -1 
-			glyph_atlas.tex_coords[3]  = -1 
+			glyph_atlas.tex_coords.l  = -1 
+			glyph_atlas.tex_coords.t  = -1 
+			glyph_atlas.tex_coords.r  = -1 
+			glyph_atlas.tex_coords.b  = -1 
 		    }
 
 		    glyph_atlas.glyph_index = glyph_index
@@ -339,7 +342,7 @@ render_font :: proc (){
 
 		stbtt.GetGlyphHMetrics(&font_info, glyph_atlas.glyph_index, &glyph_advance_width, &glyph_left_side_bearing)
 
-		if glyph_atlas.tex_coords[0] != -1{
+		if glyph_atlas.tex_coords.l != -1{
 
 		    glyph_pos_x    :f32 = current_x + (f32(glyph_left_side_bearing) * font_scale) 
 
@@ -347,20 +350,25 @@ render_font :: proc (){
 
 
 		    glyph_pos_y_px :f32 = current_y - f32(glyph_atlas.distance_from_baseline_to_top_px)
-		    glyph_width_with_horiz_filter_padding :i32 = i32(glyph_atlas.tex_coords[2] - glyph_atlas.tex_coords[0])
-		    glyph_height    :i32 = i32(glyph_atlas.tex_coords[3] - glyph_atlas.tex_coords[1])
+		    glyph_width_with_horiz_filter_padding :i32 = i32(glyph_atlas.tex_coords.r - glyph_atlas.tex_coords.l)
+		    glyph_height    :i32 = i32(glyph_atlas.tex_coords.b - glyph_atlas.tex_coords.t)
 
 		    r :  rect_instance 
 
-		    r.pos[0] = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding));;
-		    r.pos[1] = f32(glyph_pos_y_px);
-		    r.pos[2] = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding) + f32(glyph_width_with_horiz_filter_padding))
-		    r.pos[3] = f32(glyph_pos_y_px + f32(glyph_height));
+		    r.pos.l = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding));;
+		    r.pos.t = f32(glyph_pos_y_px);
+		    r.pos.r = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding) + f32(glyph_width_with_horiz_filter_padding))
+		    r.pos.b = f32(glyph_pos_y_px + f32(glyph_height));
 
 		    r.subpixel_shift = glyph_pos_x_subpixel_shift;
 		    r.tex_coords     = glyph_atlas.tex_coords;
 		    r.color          = text_color;
 		    r.index          = u32(i+1)
+
+		    if r.index == gap_buf.front{
+		    	index_rect = r
+		    }
+
 		    append(&rect_buffer, r)
 		}
 
@@ -370,8 +378,6 @@ render_font :: proc (){
     }
     {
 	gl.ClearColor(0.25, 0.25, 0.25, 1.0);
-
-
 	gl.Clear(gl.COLOR_BUFFER_BIT);
 
 
@@ -406,7 +412,7 @@ render_font :: proc (){
 	
 	// We don't need the contents of the CPU or GPU buffer anymore
 	gl.InvalidateBufferData(rect_instances_vbo);
-	render_cursor()
+	render_cursor(index_rect)
 	glfw.SwapBuffers(window)
     }
     redraw = false
@@ -580,6 +586,7 @@ main :: proc(){
     gl.TextureStorage2D(glyph_atlas_texture, 1, gl.RGB8, glyph_atlas_width , glyph_atlas_height)
 
 
+	init_cursor()
 
     
     for !glfw.WindowShouldClose(window){
@@ -587,7 +594,6 @@ main :: proc(){
 
 
 
-	init_cursor()
 
 
 	if redraw{

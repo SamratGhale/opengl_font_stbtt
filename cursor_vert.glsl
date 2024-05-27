@@ -9,7 +9,9 @@ out     vec4 obj_color;
 
 
 void main(){
-	gl_Position = mat * vec4(pos, 1.0);
+	vec4 new_pos = mat * vec4(pos, 1.0);
+	vec4 axes_flip = vec4(1, -1, 1, 1);
+	gl_Position = new_pos * axes_flip;
 	v_pos = vec2(pos.x, pos.y);
 	obj_color = o_color;
 }
