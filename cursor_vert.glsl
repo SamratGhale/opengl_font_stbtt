@@ -1,23 +1,15 @@
 #version 450 core
-#extension GL_ARB_texture_rectangle: enable
 
+layout (location = 0) uniform mat4 mat;
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec4 o_color;
 
-layout(location=0) uniform vec2 half_viewport_size;
-
-out vec2 tex_coords;
-out vec4 color;
-out float subpixel_shift;
-out uint index_out;
-
-
-
-
-
-
+out     vec2 v_pos;
+out     vec4 obj_color;
 
 
 void main(){
-
-  vec2 pos_in_ndc = (pos / half_viewport_size - 1.0) * axes_flip;
-	gl_Position = vec4(pos_in_ndc)
+	gl_Position = mat * vec4(pos, 1.0);
+	v_pos = vec2(pos.x, pos.y);
+	obj_color = o_color;
 }

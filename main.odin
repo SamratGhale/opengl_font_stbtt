@@ -17,6 +17,8 @@ window : glfw.WindowHandle
 rect4i16 :: [4]f32
 color_t :: [4]f32
 
+vec3 :: [3]f32
+
 
 window_height :i32= 800
 window_width  :i32= 1000
@@ -30,9 +32,17 @@ rect_instance :: struct  #packed {
     subpixel_shift  : f32,
 }
 
+CursorGl :: struct {
+	cursor_buf, vao : u32,
+	cursor          : Cursor,
+}
+
+Cursor :: struct {
+	pos    : vec3, 
+	color: color_t,
+}
+
 app : app_state
-
-
 
 app_state :: struct{
     font_info : stbtt.fontinfo,
@@ -50,6 +60,8 @@ app_state :: struct{
     gap_buf      : GapBuf,
 
     cursor_program_id : u32,
+
+    cursor : CursorGl,
 }
 
 
@@ -80,6 +92,70 @@ scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
     redraw = true
 }
 
+init_cursor :: proc(){
+	using app.cursor
+
+	color := color_t{1, 1, 1, 1}
+	max_p : = vec3{10,10,10}
+	min_p : = vec3{1,1,1}
+	vertices := []f32 {
+	    max_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a, // top right
+	    max_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom right
+	    min_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom left
+	    min_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a // top left 
+	};
+
+
+	gl.CreateBuffers(1, &cursor_buf)
+    gl.CreateVertexArrays(1, &vao)
+    gl.VertexArrayVertexBuffer(vao, 0, cursor_buf, 0, size_of(vertices)); 
+
+    //POS
+    gl.EnableVertexArrayAttrib( vao, 0);     // read it from a data source
+    gl.VertexArrayAttribBinding(vao, 0, 0);  // read from data source 0
+    gl.VertexArrayAttribFormat( vao, 0, 2, gl.FLOAT, false , 0);
+
+    gl.EnableVertexArrayAttrib( vao, 1);     // read it from a data source
+    gl.VertexArrayAttribBinding(vao, 1, 0);  // read from data source 1
+    gl.VertexArrayAttribFormat( vao, 1, 4, gl.FLOAT, false, u32(offset_of(Cursor, color)));  
+
+}
+
+render_cursor :: proc(){
+	using app.cursor
+
+
+	cursor.color = {1,1,1,1}
+	cursor.pos= {100, 100, 0}
+    a :f32= 2.0 / f32(window_width)
+    b :f32= 2.0 / f32(window_height)
+	proj : [16]f32 = {
+		a, 0, 0, 0, 0, b, 0, 0, 0, 0, 1, 0, -1, -1, 0, 1,
+	};
+	//put cursor_program_id inside CursorGL
+	gl.ProgramUniformMatrix4fv(app.cursor_program_id, 0, 1, gl.FALSE,  &proj[0]);
+
+	color := color_t{1, 1, 1, 1}
+	max_p : = vec3{10,10,10}
+	min_p : = vec3{1,1,1}
+	vertices := []f32 {
+	    max_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a, // top right
+	    max_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom right
+	    min_p.x,  min_p.y, 0.0, color.r, color.g, color.b, color.a, // bottom left
+	    min_p.x,  max_p.y, 0.0, color.r, color.g, color.b, color.a // top left 
+	};
+
+
+	//gl.ProgramUniform2f(program_id, 0, f32(window_width) / 2.0, f32(window_height) / 2.0);
+    gl.NamedBufferData(cursor_buf, size_of(vertices), &vertices, gl.DYNAMIC_DRAW)
+    gl.BindVertexArray(vao)
+    gl.UseProgram(app.cursor_program_id)
+    gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, 1)
+    gl.UseProgram(0)
+    gl.BindVertexArray(0)
+
+}
+
 render_font :: proc (){
 
     using app
@@ -90,7 +166,7 @@ render_font :: proc (){
     }
     coverage_adjustment  :f32 =  0.0
     text_color : color_t = {1, 1, 1, 1}
-    font_data, _ := os.read_entire_file_from_filename("C:/Windows/Fonts/Consola.ttf")
+    font_data, _ := os.read_entire_file_from_filename("Ubuntu-R.ttf")
     stbtt.InitFont(&font_info, &font_data[0], 0)
 
 
@@ -330,6 +406,7 @@ render_font :: proc (){
 	
 	// We don't need the contents of the CPU or GPU buffer anymore
 	gl.InvalidateBufferData(rect_instances_vbo);
+	render_cursor()
 	glfw.SwapBuffers(window)
     }
     redraw = false
@@ -450,7 +527,7 @@ main :: proc(){
 
     program_id, _ = gl.load_shaders_file("font_vert.glsl", "font_frag.glsl")
 
-    //cursor_program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
+    cursor_program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
 
 
     //gl.CreateBuffers(1, &rect_vertices_vbo)
@@ -510,6 +587,7 @@ main :: proc(){
 
 
 
+	init_cursor()
 
 
 	if redraw{
