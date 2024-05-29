@@ -26,16 +26,23 @@ gapbuf_destroy :: proc(b: ^GapBuf){
 
 //insert at the front of the gap
 gapbuf_insert :: proc(b: ^GapBuf, c: u8){
-    if b.gap == 0{
-	back    := b.total - b.front
-	b.gap    = b.total
-	b.total *=2 
-	intr.mem_copy_non_overlapping(&b.buf[0], &b.buf[0], b.total)
-	intr.mem_copy(&b.buf[b.front+b.gap], &b.buf[b.front], back)
-    }
+	if b.gap == 0{
 
-    b.buf[b.front] = c
-    b.front +=1
+		back    := b.total - b.front
+		b.gap    = b.total
+		b.total *=2 
+
+		new_buff,_ := mem.alloc_bytes(int(b.total))
+
+		intr.mem_copy_non_overlapping(&new_buff[0], &b.buf[0], b.total)
+		b.buf = new_buff
+		if back != 0{
+			intr.mem_copy(&b.buf[b.front+b.gap], &b.buf[b.front], back)
+		}
+	}
+
+	b.buf[b.front] = c
+	b.front +=1
     b.gap   -=1
 }
 
@@ -86,11 +93,11 @@ gapbuf_move :: proc(b: ^GapBuf, amt : i32){
 }
 
 gapbuf_backward :: proc(b: ^GapBuf){
-    if b.front > 0{
+	if b.front > 0{
 	//very neat
 	b.buf[b.front + b.gap - 1] = b.buf[b.front -1]
 	b.front-=1
-    }
+}
 }
 
 //delete like del
@@ -110,10 +117,10 @@ gapbuf_backspace :: proc(b: ^GapBuf){
 
 //delete like backspace
 gapbuf_frontward:: proc(b: ^GapBuf){
-    if b.front < b.total {
-	b.buf[b.front] = b.buf[b.front+ b.gap]
-	b.front+=1
-    }
+	if  b.front + b.gap < b.total{
+		b.buf[b.front] = b.buf[b.front+ b.gap]
+		b.front+=1
+	}
 }
 
 //Returns the string to be rendered of the gap buffer

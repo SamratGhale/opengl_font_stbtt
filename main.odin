@@ -4,6 +4,7 @@ import      "core:fmt"
 import      "base:runtime"
 import      "core:mem"
 import gl   "vendor:OpenGl"
+import "core:time"
 import      "core:os"
 import      "core:math"
 import glfw "vendor:glfw"
@@ -624,7 +625,8 @@ main :: proc(){
 
 		process_inputs()
 		//Handle events
-		if is_pressed(.BACK){
+		if is_down(.BACK){
+			time.sleep(90000000)
 			gapbuf_backspace(&app.gap_buf)
 			redraw = true
 		}
@@ -636,12 +638,14 @@ main :: proc(){
 			gapbuf_insert(&app.gap_buf, '\t')
 			redraw = true
 		}
-		if is_pressed(.ACTION_LEFT){
+		if is_down(.ACTION_LEFT){
+			time.sleep(90000000)
 			gapbuf_backward(&app.gap_buf)
 			redraw = true
 		}
 
-		if is_pressed(.ACTION_RIGHT){
+		if is_down(.ACTION_RIGHT){
+			time.sleep(90000000)
 			gapbuf_frontward(&app.gap_buf)
 			redraw = true
 		}
@@ -695,6 +699,7 @@ main :: proc(){
 	im.Render()
 	imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
 	glfw.SwapBuffers(window)
+
 
 	// Draw all the rects in the rect_buffer 
 
