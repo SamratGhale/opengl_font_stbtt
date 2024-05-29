@@ -14,12 +14,10 @@ import "./odin-imgui/imgui_impl_glfw"
 import "./odin-imgui/imgui_impl_opengl3"
 
 /*
-	How do we find the cursor position
-
-	if front == 0 just rendr on top left
-
-	instead of looking at the font at the location of the gap front
-	calculate the width of the character (same for everyone) and multiply by it
+	--COLUMNS
+		Parse the text and store all the location of the newline
+		Store
+		The colum of the cursor is how far from a \n the front is
 */
 
 window : glfw.WindowHandle
@@ -641,6 +639,16 @@ main :: proc(){
 		if is_down(.ACTION_LEFT){
 			time.sleep(90000000)
 			gapbuf_backward(&app.gap_buf)
+			redraw = true
+		}
+		if is_pressed(.ACTION_UP){
+			time.sleep(90000000)
+			gapbuf_up(&app.gap_buf)
+			redraw = true
+		}
+		if is_pressed(.ACTION_DOWN){
+			time.sleep(90000000)
+			gapbuf_down(&app.gap_buf)
 			redraw = true
 		}
 
