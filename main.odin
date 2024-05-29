@@ -8,8 +8,16 @@ import      "core:os"
 import      "core:math"
 import glfw "vendor:glfw"
 import stbtt "vendor:stb/truetype"
+import im "./odin-imgui"
+import "./odin-imgui/imgui_impl_glfw"
+import "./odin-imgui/imgui_impl_opengl3"
 
 /*
+	How do we find the cursor position
+
+	if front == 0 just rendr on top left
+	if 
+
 */
 
 window : glfw.WindowHandle
@@ -64,6 +72,12 @@ app_state :: struct{
     cursor_program_id : u32,
 
     cursor : CursorGl,
+	index_rect : rect_instance,
+
+	current_x, current_y : f32,
+
+	input : Input,
+
 }
 
 
@@ -113,12 +127,31 @@ init_cursor :: proc(){
 
 }
 
+init_imgui :: proc (){
+	im.CHECKVERSION()
+	im.CreateContext()
+	io := im.GetIO()
+	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
+
+	im.StyleColorsDark()
+
+	imgui_impl_glfw.InitForOpenGL(window, true)
+	imgui_impl_opengl3.Init("#version 150")
+}
+
+//only use the x distance of the current index
 render_cursor :: proc(ret_i : rect_instance){
 	ret : = ret_i.pos
 	ret.l += 10
-	ret.r = ret.l + 10
-	ret.t = 1
-	ret.b = 20
+
+	if app.gap_buf.front == 0{
+		fmt.println("hello")
+		ret.l =0
+	}
+
+	ret.r = ret.l + 2
+	ret.t = app.current_y - 12
+	ret.b = ret.t + 15
 	using app.cursor
 
 
@@ -131,7 +164,7 @@ render_cursor :: proc(ret_i : rect_instance){
 	};
 	//put cursor_program_id inside CursorGL
 
-	color := color_t{1, 1, 1, 1}
+	color := color_t{0, 1, 0, 1}
 
     gl.UseProgram(app.cursor_program_id)
 	vertices := []f32 {
@@ -162,16 +195,14 @@ render_font :: proc (){
     using app
     text := get_string(&gap_buf)
 
-    if gap_buf.gap == gap_buf.total{
-	return
-    }
     coverage_adjustment  :f32 =  0.0
     text_color : color_t = {1, 1, 1, 1}
-    font_data, _ := os.read_entire_file_from_filename("Ubuntu-R.ttf")
+    font_data, _ := os.read_entire_file_from_filename("c:/Windows/Fonts/Consola.ttf")
     stbtt.InitFont(&font_info, &font_data[0], 0)
 
 
-	index_rect : rect_instance
+	if redraw{
+
     rect_buffer = make([dynamic]rect_instance, 0, 1000)
     {
 	//put every glyph in text into rect_buffer
@@ -190,7 +221,7 @@ render_font :: proc (){
 
 
 	//Keep track of the current position while we process glyph after glyph
-	current_x, current_y : f32 = pos_x, f32(pos_y) + math.round(baseline)
+	current_x, current_y = pos_x, f32(pos_y) + math.round(baseline)
 
 
 
@@ -217,8 +248,11 @@ render_font :: proc (){
 		//Handle line breaks
 		current_x = pos_x
 		current_y += math.round(line_height)
+		//index_rect.pos.l = -10
+
+
 	    } else if c == '\t'{
-		current_x +=  8 * font_size_pt
+		current_x +=  4 * font_size_pt
 	    }else{
 
 		horizontal_filter_padding, subpixel_positioning_left_padding : i32 = 1 , 1
@@ -376,6 +410,7 @@ render_font :: proc (){
 	    }
 	}
     }
+	}
     {
 	gl.ClearColor(0.25, 0.25, 0.25, 1.0);
 	gl.Clear(gl.COLOR_BUFFER_BIT);
@@ -385,7 +420,10 @@ render_font :: proc (){
 	// Upload the rect buffer to the GPU.
 	// Allow the GPU driver to create a new buffer storage for each draw command. That way it doesn't have to wait for
 	// the previous draw command to finish to reuse the same buffer storage.
-	gl.NamedBufferData(rect_instances_vbo, int(len(rect_buffer) * size_of(rect_buffer[0])), &rect_buffer[0], gl.DYNAMIC_DRAW);
+
+    if gap_buf.gap != gap_buf.total{
+    	gl.NamedBufferData(rect_instances_vbo, int(len(rect_buffer) * size_of(rect_buffer[0])), &rect_buffer[0], gl.DYNAMIC_DRAW);
+    }
 	
 	// Setup pre-multiplied alpha blending (that's why the source factor is GL_ONE) with dual source blending so we can blend
 	// each subpixel individually for subpixel anti-aliased glyph rendering (that's what GL_ONE_MINUS_SRC1_COLOR does).
@@ -413,7 +451,10 @@ render_font :: proc (){
 	// We don't need the contents of the CPU or GPU buffer anymore
 	gl.InvalidateBufferData(rect_instances_vbo);
 	render_cursor(index_rect)
-	glfw.SwapBuffers(window)
+
+
+
+	//glfw.SwapBuffers(window)
     }
     redraw = false
     recalc = false
@@ -469,26 +510,6 @@ char_callback :: proc "c" (window : glfw.WindowHandle, codepoint: rune){
     redraw = true
 }
 
-keyboard_callback :: proc "c" (window: glfw.WindowHandle, key, scancode, action, mods : i32){
-    context = runtime.default_context()
-    if key == glfw.KEY_BACKSPACE && action == glfw.PRESS{
-	gapbuf_backspace(&app.gap_buf)
-    }
-    if key == glfw.KEY_ENTER && action == glfw.PRESS{
-	gapbuf_insert(&app.gap_buf, '\n')
-    }
-    if key == glfw.KEY_TAB && action == glfw.PRESS{
-	gapbuf_insert(&app.gap_buf, '\t')
-    }
-    if key == glfw.KEY_LEFT && action == glfw.PRESS{
-	gapbuf_backward(&app.gap_buf)
-    }
-
-    if key == glfw.KEY_RIGHT && action == glfw.PRESS{
-	gapbuf_frontward(&app.gap_buf)
-    }
-    redraw = true
-}
 
 
 main :: proc(){
@@ -512,14 +533,14 @@ main :: proc(){
     glfw.SetWindowSizeCallback(window, viewport_callback)
     glfw.SetScrollCallback(window, scroll_callback);
     glfw.SetCharCallback(window, char_callback)
-    glfw.SetKeyCallback(window, keyboard_callback)
 
 
 
+    //gl.load_up_to(3, 3, glfw.gl_set_proc_address)
     gl.load_up_to(4, 5, glfw.gl_set_proc_address)
 
     gl.Viewport(0, 0, window_width, window_height)
-    gl.DebugMessageCallback(gl_debug_callback, nil);
+    //gl.DebugMessageCallback(gl_debug_callback, nil);
     gl.DebugMessageControl(gl.DONT_CARE, gl.DONT_CARE, gl.DONT_CARE, 0, nil, gl.TRUE);
 
 
@@ -587,18 +608,86 @@ main :: proc(){
 
 
 	init_cursor()
+	init_imgui()
 
+	redraw = true
     
-    for !glfw.WindowShouldClose(window){
-	glfw.PollEvents()
+	for !glfw.WindowShouldClose(window){
+		glfw.PollEvents()
+
+		process_inputs()
+		//Handle events
+		if is_pressed(.BACK){
+			gapbuf_backspace(&app.gap_buf)
+			redraw = true
+		}
+		if is_pressed(.ENTER){
+			gapbuf_insert(&app.gap_buf, '\n')
+			redraw = true
+		}
+		if is_pressed(.TAB){
+			gapbuf_insert(&app.gap_buf, '\t')
+			redraw = true
+		}
+		if is_pressed(.ACTION_LEFT){
+			gapbuf_backward(&app.gap_buf)
+			redraw = true
+		}
+
+		if is_pressed(.ACTION_RIGHT){
+			gapbuf_frontward(&app.gap_buf)
+			redraw = true
+		}
 
 
 
 
 
-	if redraw{
-	    render_font()
+
+
+	render_font()
+
+	imgui_impl_opengl3.NewFrame()
+	imgui_impl_glfw.NewFrame()
+	im.NewFrame()
+
+
+	if im.Begin("Info stuffs", nil, {}){
+
+		flags := im.TableFlags_Borders | im.TableFlags_RowBg 
+
+		if im.BeginTable("Info", 2, flags){
+			io : = im.GetIO()
+			im.TableSetupColumn("Front", nil)
+			im.TableSetupColumn("Value", nil)
+			im.TableNextRow()
+			im.TableSetColumnIndex(0)
+			im.Text("Front")
+			im.TableSetColumnIndex(1)
+			im.Text("%d\n", app.gap_buf.front)
+
+			im.TableNextRow()
+			im.TableSetColumnIndex(0)
+			im.Text("Gap size")
+			im.TableSetColumnIndex(1)
+			im.Text("%d\n", app.gap_buf.gap)
+
+			im.TableNextRow()
+			im.TableSetColumnIndex(0)
+			im.Text("Total size")
+			im.TableSetColumnIndex(1)
+			im.Text("%d\n", app.gap_buf.total)
+		}
+
+		im.EndTable()
 	}
+	im.End()
+
+
+
+	im.Render()
+	imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
+	glfw.SwapBuffers(window)
 
 	// Draw all the rects in the rect_buffer 
 
