@@ -16,8 +16,9 @@ import "./odin-imgui/imgui_impl_opengl3"
 	How do we find the cursor position
 
 	if front == 0 just rendr on top left
-	if 
 
+	instead of looking at the font at the location of the gap front
+	calculate the width of the character (same for everyone) and multiply by it
 */
 
 window : glfw.WindowHandle
@@ -48,7 +49,7 @@ CursorGl :: struct {
 }
 
 Cursor :: struct {
-	pos    : vec3, 
+	x, y : f32,
 	color: color_t,
 }
 
@@ -56,12 +57,15 @@ app : app_state
 
 app_state :: struct{
     font_info : stbtt.fontinfo,
+
     glyph_atlas_items : [127]glyph_atlas_item,
     glyph_atlas_width  : i32 ,
     glyph_atlas_height : i32 ,
     glyph_atlas_texture : u32,
+
     rect_buffer : [dynamic]rect_instance,
     rect_instances_vbo : u32,
+
     vao : u32,
     program_id: u32,
     pos_x  :f32,
@@ -77,7 +81,6 @@ app_state :: struct{
 	current_x, current_y : f32,
 
 	input : Input,
-
 }
 
 
@@ -140,23 +143,27 @@ init_imgui :: proc (){
 }
 
 //only use the x distance of the current index
-render_cursor :: proc(ret_i : rect_instance){
-	ret : = ret_i.pos
-	ret.l += 10
+render_cursor :: proc(){
+
+
+	using app.cursor
+
+	ret : rect4i16 // ret_i.pos
+
+	ret.l = cursor.x
+	ret.b = cursor.y + 3 
+
 
 	if app.gap_buf.front == 0{
-		fmt.println("hello")
 		ret.l =0
 	}
 
-	ret.r = ret.l + 2
-	ret.t = app.current_y - 12
-	ret.b = ret.t + 15
-	using app.cursor
+	ret.r = ret.l + 10
+	ret.t = ret.b - 15
+	//ret.b = ret.t + 15
 
 
 	cursor.color = {1,1,1,1}
-	cursor.pos= {100, 100, 0}
     a :f32= 2.0 / f32(window_width)
     b :f32= 2.0 / f32(window_height)
 	proj : [16]f32 = {
@@ -197,7 +204,7 @@ render_font :: proc (){
 
     coverage_adjustment  :f32 =  0.0
     text_color : color_t = {1, 1, 1, 1}
-    font_data, _ := os.read_entire_file_from_filename("c:/Windows/Fonts/Consola.ttf")
+    font_data, _ := os.read_entire_file_from_filename("UbuntuMono-R.ttf")
     stbtt.InitFont(&font_info, &font_data[0], 0)
 
 
@@ -239,7 +246,7 @@ render_font :: proc (){
 
 	    //Apply kerning
 	    if prev_codepoint != 0{
-		current_x += f32(stbtt.GetCodepointKernAdvance(&font_info, prev_codepoint, c)) * font_scale
+	    	current_x += f32(stbtt.GetCodepointKernAdvance(&font_info, prev_codepoint, c)) * font_scale
 	    }
 
 	    prev_codepoint = c
@@ -248,7 +255,6 @@ render_font :: proc (){
 		//Handle line breaks
 		current_x = pos_x
 		current_y += math.round(line_height)
-		//index_rect.pos.l = -10
 
 
 	    } else if c == '\t'{
@@ -399,19 +405,20 @@ render_font :: proc (){
 		    r.color          = text_color;
 		    r.index          = u32(i+1)
 
-		    if r.index == gap_buf.front{
-		    	index_rect = r
-		    }
 
 		    append(&rect_buffer, r)
 		}
 
 		current_x += f32(glyph_advance_width) * font_scale
 	    }
+	    if u32(i) == gap_buf.front-1{
+	    	app.cursor.cursor.x = current_x
+	    	app.cursor.cursor.y = current_y
+	    }
 	}
     }
 	}
-    {
+	{
 	gl.ClearColor(0.25, 0.25, 0.25, 1.0);
 	gl.Clear(gl.COLOR_BUFFER_BIT);
 
@@ -450,7 +457,7 @@ render_font :: proc (){
 	
 	// We don't need the contents of the CPU or GPU buffer anymore
 	gl.InvalidateBufferData(rect_instances_vbo);
-	render_cursor(index_rect)
+	render_cursor()
 
 
 
