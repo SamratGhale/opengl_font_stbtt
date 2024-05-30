@@ -1,7 +1,9 @@
 package main
 
 import "core:mem"
+import "core:os"
 import intr "base:intrinsics"
+import      "core:fmt"
 import "core:strings"
 
 GapBuf :: struct {
@@ -17,6 +19,28 @@ gapbuf_init :: proc(b: ^GapBuf, init: u32){
     b.total = init
     b.gap   = init
     b.buf,_ = mem.alloc_bytes(int(init))
+}
+
+gapbuf_init_file :: proc(b: ^GapBuf, file_path: string){
+    data, ok := os.read_entire_file_from_filename(file_path)
+
+
+    //gapbuf_inserts(b, data)
+
+    if ok{
+    	data_len := len(data)
+    	b.total = u32(data_len + 200)
+    	b.gap = 200
+    	//b.front = 0
+    	b.front = 0
+    	b.buf,_ = mem.alloc_bytes(data_len + 200)
+	    //mem.
+	    intr.mem_copy(&b.buf[200], &data[0], data_len)
+
+    }else{
+    	fmt.println("Failed to read file")
+    	gapbuf_init(b, 200)
+    }
 }
 
 gapbuf_destroy :: proc(b: ^GapBuf){
@@ -140,9 +164,10 @@ get_string :: proc(g: ^GapBuf) -> string{
 
 
 //get's the list of newlines's position in the string
-get_columns :: proc(str: string)->[dynamic]u32{
+get_rows :: proc(str: string)->[dynamic]u32{
 	ret := make([dynamic]u32, 0, 10)
 
+	append(&ret, 0) //always starts with 0
 	for r , i in str{
 		if r == '\n'{
 			append(&ret, u32(i))
@@ -151,74 +176,71 @@ get_columns :: proc(str: string)->[dynamic]u32{
 	return ret
 }
 
+// Get current row and column
+// Find the length of the previous row
+// move -min(column, len_of_previous_row)
+
 gapbuf_up :: proc(b: ^GapBuf){
+	row, column := gapbuf_get_curr_pos(b)
+
+	if row == 0 do return
 
 	str := get_string(b)
+	rows := get_rows(str)
 
-	columns := get_columns(str)
+	add_offset :i32= i32(row-1) == 0 ? 1 : 0 //because first row dosen't have \n
+	len_of_prev_row :i32= max(i32(column), i32(rows[row]) - i32(rows[row-1]))  + add_offset
 
-	if (len(columns)  == 0) || (b.front == 0) do return
+	gapbuf_move(b, -len_of_prev_row)
+}
 
-	for c, i in columns
-	{
-		if c < b.front
-		{
-			if i < len(columns)-1
-			{
-				if columns[i+1] > b.front
-				{
-					//this takes to the end of the previous row
-					amt : i32
-					if(i-1>=0){
-						amt = i32(b.front) - i32(columns[i-1]) + (i32(b.front) - i32(c))+1
-					}else{
-						amt = i32(b.front) - (i32(b.front) - i32(c))+1
-					}
-					//amt : i32 = i32(b.front) - i32(c) 
-
-					//we need to increase
+//Get current row and column
+//Find the length of the next row
+//move to min(column, )
+gapbuf_down :: proc(b: ^GapBuf){
+	row, column := gapbuf_get_curr_pos(b)
 
 
-					gapbuf_move(b, -amt)
-					return
-				}
-			}else
-			{
-				amt : i32
-				if(i-1>=0){
-					amt = i32(b.front) - i32(columns[i-1]) + (i32(b.front) - i32(c))+1
-				}else{
-					amt = i32(b.front) - (i32(b.front) - i32(c))+1
-				}
-				//amt : i32 = i32(b.front) - i32(c) 
-				gapbuf_move(b, -amt)
-				return
-			} 
-		}
-	}
+	str  := get_string(b)
+	rows := get_rows(str)
+
+	if int(row) == len(rows) -1 do return
+
+	add_offset :i32= i32(row) == 0 ? 1 : 0 //because first row dosen't have \n
+	len_of_prev_row :i32= max(i32(column), i32(rows[row+1]) - i32(rows[row])) + add_offset
+
+	gapbuf_move(b, len_of_prev_row)
 }
 
 
-gapbuf_down :: proc(b: ^GapBuf){
-
+//row, column
+gapbuf_get_curr_pos :: proc(b: ^GapBuf)-> (u32, u32){
 	str := get_string(b)
 
-	columns := get_columns(str)
+	rows := get_rows(str)
 
-	if (len(columns)  == 0)  do return
+	row : u32
+	column : u32
 
-	for c, i in columns{
-		if c > b.front{
-			amt: i32
-			if(i-1>=0){
-				amt = (i32(c) - i32(b.front)) + (i32(b.front) - i32(columns[i-1])) +1
+	if len(rows) <= 1 do return  0, b.front
+
+	for r, i in rows{
+
+		if b.front >= r{
+			if i < len(rows)-1{
+				if b.front < rows[i+1] {
+					column = b.front - r
+					row = u32(i)
+					break
+				}
 			}else{
-				amt = (i32(c) - i32(b.front)) + (i32(b.front)) + 1
+				row = u32(i)
+				column = b.front - r
 			}
-			gapbuf_move(b, amt)
-			break
 		}
 	}
+
+	return row, column
 }
 
 

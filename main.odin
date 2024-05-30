@@ -80,6 +80,8 @@ app_state :: struct{
 	current_x, current_y : f32,
 
 	input : Input,
+
+	open_file : string,
 }
 
 
@@ -98,14 +100,11 @@ scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
 
     //if ctrol is down
     if glfw.GetKey(window, glfw.KEY_LEFT_CONTROL) == glfw.PRESS{
-	app.font_size_pt += f32(y)
-	recalc = true
+    	app.font_size_pt += f32(y)
+    	recalc = true
     }else{
-	app.pos_y += f32(y * 20)
+    	app.pos_y += f32(y * 20)
     }
-
-
-
     //state.world.scale.z += f32(y) * 0.05
     redraw = true
 }
@@ -157,7 +156,7 @@ render_cursor :: proc(){
 		ret.l =0
 	}
 
-	ret.r = ret.l + 10
+	ret.r = ret.l + 2
 	ret.t = ret.b - 15
 	//ret.b = ret.t + 15
 
@@ -257,7 +256,7 @@ render_font :: proc (){
 
 
 	    } else if c == '\t'{
-		current_x +=  4 * font_size_pt
+		current_x +=  2 * font_size_pt
 	    }else{
 
 		horizontal_filter_padding, subpixel_positioning_left_padding : i32 = 1 , 1
@@ -552,7 +551,14 @@ main :: proc(){
 
     using app
 
-    gapbuf_init(&gap_buf, 200)
+    if len(os.args) > 1{
+    	fmt.println(os.args[1])
+    	gapbuf_init_file(&gap_buf, os.args[1])
+    	app.open_file = os.args[1]
+    }else{
+    	gapbuf_init(&gap_buf, 200)
+    }
+
 
     glyph_atlas_width  = 512
     glyph_atlas_height = 512
@@ -642,7 +648,6 @@ main :: proc(){
 			redraw = true
 		}
 		if is_pressed(.ACTION_UP){
-			time.sleep(90000000)
 			gapbuf_up(&app.gap_buf)
 			redraw = true
 		}
@@ -696,6 +701,14 @@ main :: proc(){
 			im.Text("Total size")
 			im.TableSetColumnIndex(1)
 			im.Text("%d\n", app.gap_buf.total)
+
+			im.TableNextRow()
+			im.TableSetColumnIndex(0)
+			im.Text("Pos ")
+			im.TableSetColumnIndex(1)
+			row, column := gapbuf_get_curr_pos(&app.gap_buf)
+
+			im.Text("%d, %d\n", row, column)
 		}
 
 		im.EndTable()
