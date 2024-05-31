@@ -14,10 +14,7 @@ import "./odin-imgui/imgui_impl_glfw"
 import "./odin-imgui/imgui_impl_opengl3"
 
 /*
-	--COLUMNS
-		Parse the text and store all the location of the newline
-		Store
-		The colum of the cursor is how far from a \n the front is
+	Render command bar
 */
 
 window : glfw.WindowHandle
@@ -82,6 +79,8 @@ app_state :: struct{
 	input : Input,
 
 	open_file : string,
+
+	console : Console
 }
 
 
@@ -132,7 +131,7 @@ init_imgui :: proc (){
 	im.CHECKVERSION()
 	im.CreateContext()
 	io := im.GetIO()
-	io.ConfigFlags += {.NavEnableKeyboard, .NavEnableGamepad}
+	io.ConfigFlags += {.NavEnableKeyboard}
 
 	im.StyleColorsDark()
 
@@ -202,8 +201,6 @@ render_font :: proc (){
 
     coverage_adjustment  :f32 =  0.0
     text_color : color_t = {1, 1, 1, 1}
-    font_data, _ := os.read_entire_file_from_filename("UbuntuMono-R.ttf")
-    stbtt.InitFont(&font_info, &font_data[0], 0)
 
 
 	if redraw{
@@ -515,6 +512,10 @@ char_callback :: proc "c" (window : glfw.WindowHandle, codepoint: rune){
     redraw = true
 }
 
+render_status_bar :: proc(){
+
+}
+
 
 
 main :: proc(){
@@ -623,12 +624,24 @@ main :: proc(){
 	init_imgui()
 
 	redraw = true
+    font_data, _ := os.read_entire_file_from_filename("UbuntuMono-R.ttf")
+    stbtt.InitFont(&font_info, &font_data[0], 0)
+
+
+
+    //Console
+
+    init_console(&app.console)
+
     
 	for !glfw.WindowShouldClose(window){
 		glfw.PollEvents()
 
 		process_inputs()
 		//Handle events
+		if is_pressed(.F1){
+			im.SetWindowFocusStr("Command"); 
+		}
 		if is_down(.BACK){
 			time.sleep(90000000)
 			gapbuf_backspace(&app.gap_buf)
@@ -712,10 +725,13 @@ main :: proc(){
 		}
 
 		im.EndTable()
+
+		//im.ShowDemoWindow()
 	}
 	im.End()
 
-
+	open_console:= true
+	console_draw(&app.console, "Command",&open_console)
 
 	im.Render()
 	imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
