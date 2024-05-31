@@ -39,6 +39,8 @@ Button :: enum {
     MOUSE_RIGHT,
     CTRL,
     TAB,
+    SEMICOLON,
+    SHIFT,
 }
 
 //reprensets one input device, i.e keyboard, gamepad 
@@ -118,6 +120,8 @@ process_inputs :: proc(){
     process_keyboard_input(&buttons[.MOUSE_RIGHT], GetMouseButton(window, MOUSE_BUTTON_RIGHT) == PRESS)
     process_keyboard_input(&buttons[.CTRL], GetKey(window, KEY_LEFT_CONTROL) == PRESS)
     process_keyboard_input(&buttons[.TAB], GetKey(window, KEY_TAB) == PRESS)
+    process_keyboard_input(&buttons[.SEMICOLON], GetKey(window, KEY_SEMICOLON) == PRESS)
+    process_keyboard_input(&buttons[.SHIFT], GetKey(window, KEY_LEFT_SHIFT) == PRESS)
 }
 
 

@@ -1,6 +1,7 @@
 package main
 
 import      "core:fmt"
+import strings "core:strings"
 import      "base:runtime"
 import      "core:mem"
 import gl   "vendor:OpenGl"
@@ -80,7 +81,11 @@ app_state :: struct{
 
 	open_file : string,
 
-	console : Console
+	console : Console,
+
+	vim_state : VimState,
+
+
 }
 
 
@@ -131,6 +136,9 @@ init_imgui :: proc (){
 	im.CHECKVERSION()
 	im.CreateContext()
 	io := im.GetIO()
+	//io.Fonts->AddFontFromFileTTF();
+	im.FontAtlas_AddFontFromFileTTF(io.Fonts, "C:/Windows/Fonts/Consola.ttf", 17)
+
 	io.ConfigFlags += {.NavEnableKeyboard}
 
 	im.StyleColorsDark()
@@ -148,14 +156,20 @@ render_cursor :: proc(){
 	ret : rect4i16 // ret_i.pos
 
 	ret.l = cursor.x
+
+
 	ret.b = cursor.y + 3 
 
 
 	if app.gap_buf.front == 0{
 		ret.l =0
 	}
+	if app.vim_state.mode == .Insert{
+		ret.r = ret.l + 2
+	}else{
+		ret.r = ret.l + 10
+	}
 
-	ret.r = ret.l + 2
 	ret.t = ret.b - 15
 	//ret.b = ret.t + 15
 
@@ -508,8 +522,40 @@ viewport_callback :: proc "c" (window: glfw.WindowHandle, x, y: i32){
 char_callback :: proc "c" (window : glfw.WindowHandle, codepoint: rune){
     context = runtime.default_context()
 
-    gapbuf_insert(&app.gap_buf, u8(codepoint))
-    redraw = true
+    if app.vim_state.mode == .Insert{
+		if is_down(.SHIFT) && codepoint == ':'{
+			app.vim_state.mode = .Command
+		}else{
+			gapbuf_insert(&app.gap_buf, u8(codepoint))
+			redraw = true
+		}
+    }
+    else if app.vim_state.mode == .Normal{
+		if codepoint == 'i'{
+			app.vim_state.mode = .Insert
+		}
+
+		if codepoint == 'h'{
+			time.sleep(90000000)
+			gapbuf_backward(&app.gap_buf)
+			redraw = true
+		}
+		if codepoint == 'k'{
+			gapbuf_up(&app.gap_buf)
+			redraw = true
+		}
+		if codepoint == 'j'{
+			time.sleep(90000000)
+			gapbuf_down(&app.gap_buf)
+			redraw = true
+		}
+
+		if codepoint == 'l'{
+			time.sleep(90000000)
+			gapbuf_frontward(&app.gap_buf)
+			redraw = true
+		}
+	}
 }
 
 render_status_bar :: proc(){
@@ -639,46 +685,54 @@ main :: proc(){
 
 		process_inputs()
 		//Handle events
-		if is_pressed(.F1){
-			im.SetWindowFocusStr("Command"); 
-		}
-		if is_down(.BACK){
-			time.sleep(90000000)
-			gapbuf_backspace(&app.gap_buf)
-			redraw = true
-		}
-		if is_pressed(.ENTER){
-			gapbuf_insert(&app.gap_buf, '\n')
-			redraw = true
-		}
-		if is_pressed(.TAB){
-			gapbuf_insert(&app.gap_buf, '\t')
-			redraw = true
-		}
-		if is_down(.ACTION_LEFT){
-			time.sleep(90000000)
-			gapbuf_backward(&app.gap_buf)
-			redraw = true
-		}
-		if is_pressed(.ACTION_UP){
-			gapbuf_up(&app.gap_buf)
-			redraw = true
-		}
-		if is_pressed(.ACTION_DOWN){
-			time.sleep(90000000)
-			gapbuf_down(&app.gap_buf)
-			redraw = true
+		if vim_state.mode == .Insert{
+			if is_pressed(.F1){
+				im.SetWindowFocusStr("Command"); 
+			}
+			if is_down(.BACK){
+				time.sleep(90000000)
+				gapbuf_backspace(&app.gap_buf)
+				redraw = true
+			}
+			if is_pressed(.ENTER){
+				gapbuf_insert(&app.gap_buf, '\n')
+				redraw = true
+			}
+			if is_pressed(.TAB){
+				gapbuf_insert(&app.gap_buf, '\t')
+				redraw = true
+			}
+			if is_down(.ACTION_LEFT){
+				time.sleep(90000000)
+				gapbuf_backward(&app.gap_buf)
+				redraw = true
+			}
+			if is_pressed(.ACTION_UP){
+				gapbuf_up(&app.gap_buf)
+				redraw = true
+			}
+			if is_pressed(.ACTION_DOWN){
+				time.sleep(90000000)
+				gapbuf_down(&app.gap_buf)
+				redraw = true
+			}
+
+			if is_down(.ACTION_RIGHT){
+				time.sleep(90000000)
+				gapbuf_frontward(&app.gap_buf)
+				redraw = true
+			}
+
 		}
 
-		if is_down(.ACTION_RIGHT){
-			time.sleep(90000000)
-			gapbuf_frontward(&app.gap_buf)
-			redraw = true
+		if is_pressed(.ESCAPE){
+			if app.vim_state.mode == .Command{
+				app.vim_state.mode = .Insert
+			}
+			else if app.vim_state.mode == .Insert{
+				app.vim_state.mode = .Normal
+			}
 		}
-
-
-
-
 
 
 
@@ -720,8 +774,16 @@ main :: proc(){
 			im.Text("Pos ")
 			im.TableSetColumnIndex(1)
 			row, column := gapbuf_get_curr_pos(&app.gap_buf)
-
 			im.Text("%d, %d\n", row, column)
+
+			im.TableNextRow()
+			im.TableSetColumnIndex(0)
+			im.Text("Vim Mode")
+			im.TableSetColumnIndex(1)
+
+			vim_val, _ := fmt.enum_value_to_string(vim_state.mode)
+			im.Text(strings.unsafe_string_to_cstring(vim_val))
+			//row, column := gapbuf_get_curr_pos(&app.gap_buf)
 		}
 
 		im.EndTable()
@@ -731,7 +793,11 @@ main :: proc(){
 	im.End()
 
 	open_console:= true
-	console_draw(&app.console, "Command",&open_console)
+
+
+	if(vim_state.mode == .Command){
+		console_draw(&app.console, "Command",&open_console)
+	}
 
 	im.Render()
 	imgui_impl_opengl3.RenderDrawData(im.GetDrawData())

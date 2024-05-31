@@ -14,7 +14,9 @@ VimMode :: enum{
 	Insert,
 	Normal,
 	Visual,
+	Replace,
 	Command,
+	CommandSearch,
 }
 
 VimState :: struct{
@@ -78,7 +80,30 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
 	//im.TextWrapped("This Example implements a console with basic coloring, completiotion and history")
 
 	//TODO: display items starting from the bottom
+    reclaim_focus := true;
+    if im.InputText("Input", cstring(InputBuf), 256, {.EnterReturnsTrue, .CallbackCompletion, .CallbackHistory}, ConsoleInputTextCallback)
+    {
+    	/*
+    	input_end := string(InputBuf)[len(InputBuf);
+    	for (input_end > InputBuf && input_end[-1] == ' ') { 
+    		input_end -=1 ; 
+    	} 
+    	^input_end = 0;
+    	*/
+    	//if (InputBuf[0])
+    	ConsoleExecCommand(console, cstring(InputBuf));
+    	libc.strcpy(InputBuf, "");
 
+    	app.vim_state.mode = .Insert
+    	reclaim_focus = true;
+    }
+    // Demonstrate keeping focus on the input box
+    im.SetItemDefaultFocus();
+    if reclaim_focus{
+        im.SetKeyboardFocusHere(-1); // Auto focus previous widget
+    }
+
+    /*
 	if im.SmallButton("Add dummy text") {
 		console_add_log(console, fmt.tprintf("%d some text", len(Items) ))
 		console_add_log(console, "some more text")
@@ -103,12 +128,13 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
 	if im.SmallButton("Scroll to bottom"){
 		ScrollToBottom = true
 	}
-
 	im.Separator()
+	*/
+
 
 	im.PushStyleVarImVec2(.FramePadding, im.Vec2{0,0})
 
-	im.TextFilter_Draw(&filter, "Filter (\"incl,-excl\") (\"error\")", 180)
+	//im.TextFilter_Draw(&filter, "Filter (\"incl,-excl\") (\"error\")", 180)
 
 	im.PopStyleVar()
 	im.Separator()
@@ -126,7 +152,7 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
 
     im.PushStyleVarImVec2(.ItemSpacing, im.Vec2{4,1});
 
-    if (copy_to_clipboard) do im.LogToClipboard();
+    //if (copy_to_clipboard) do im.LogToClipboard();
 
     col_default_text := im.GetStyleColorVec4(.Text);
 
@@ -140,7 +166,7 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
     	im.PopStyleColor()
     }
 
-    if copy_to_clipboard do im.LogFinish()
+    //if copy_to_clipboard do im.LogFinish()
     //if ScrollToBottom do im.SetScrollHere()
 
     ScrollToBottom = false
@@ -150,30 +176,6 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
 
     //Command line
 
-    reclaim_focus := false;
-    if is_down(.F1){
-        im.SetKeyboardFocusHere(-1); // Auto focus previous widget
-        reclaim_focus = true;
-    }
-    if im.InputText("Input", cstring(InputBuf), 256, {.EnterReturnsTrue, .CallbackCompletion, .CallbackHistory}, ConsoleInputTextCallback)
-    {
-    	/*
-    	input_end := string(InputBuf)[len(InputBuf);
-    	for (input_end > InputBuf && input_end[-1] == ' ') { 
-    		input_end -=1 ; 
-    	} 
-    	^input_end = 0;
-    	*/
-    	//if (InputBuf[0])
-    	ConsoleExecCommand(console, cstring(InputBuf));
-    	libc.strcpy(InputBuf, "");
-    	reclaim_focus = true;
-    }
-    // Demonstrate keeping focus on the input box
-    im.SetItemDefaultFocus();
-    if reclaim_focus{
-        im.SetKeyboardFocusHere(-1); // Auto focus previous widget
-    }
     im.End();
 }
 
