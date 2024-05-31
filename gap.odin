@@ -3,7 +3,7 @@ package main
 import "core:mem"
 import "core:os"
 import intr "base:intrinsics"
-import      "core:fmt"
+import "core:fmt"
 import "core:strings"
 
 GapBuf :: struct {
@@ -93,35 +93,35 @@ gapbuf_move :: proc(b: ^GapBuf, amt : i32){
 
     dst, src : rawptr
     if amt < 0{
-	strlen = -amt
-	if strlen > i32(b.front){
-	    strlen = i32(b.front)
-	}
+    	strlen = -amt
+    	if strlen > i32(b.front){
+    		strlen = i32(b.front)
+    	}
 
-	dst = &b.buf[i32(b.front + b.gap) - strlen]
-	src = &b.buf[i32(b.front) - strlen]
-	b.front -= u32(strlen)
+    	dst = &b.buf[i32(b.front + b.gap) - strlen]
+    	src = &b.buf[i32(b.front) - strlen]
+    	b.front -= u32(strlen)
     }else{
-	back := b.total - b.front - b.gap
-	strlen = amt
+    	back := b.total - b.front - b.gap
+    	strlen = amt
 
-	if strlen > i32(back){
-	    strlen = i32(back)
-	}
+    	if strlen > i32(back){
+    		strlen = i32(back)
+    	}
 
-	dst = &b.buf[b.front]
-	src = &b.buf[b.front + b.gap]
-	b.front += u32(strlen)
+    	dst = &b.buf[b.front]
+    	src = &b.buf[b.front + b.gap]
+    	b.front += u32(strlen)
     }
     intr.mem_copy(dst, src, strlen)
 }
 
 gapbuf_backward :: proc(b: ^GapBuf){
 	if b.front > 0{
-	//very neat
-	b.buf[b.front + b.gap - 1] = b.buf[b.front -1]
-	b.front-=1
-}
+		//very neat
+		b.buf[b.front + b.gap - 1] = b.buf[b.front -1]
+		b.front-=1
+	}
 }
 
 //delete like del
@@ -133,10 +133,10 @@ gapbuf_delete :: proc(b: ^GapBuf){
 
 //move like backspace
 gapbuf_backspace :: proc(b: ^GapBuf){
-    if b.front > 0{
-	b.front -=1
-	b.gap   += 1
-    }
+	if b.front > 0{
+		b.front -=1
+		b.gap   += 1
+	}
 }
 
 //delete like backspace

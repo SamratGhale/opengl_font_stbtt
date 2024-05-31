@@ -15,17 +15,15 @@ import "./odin-imgui/imgui_impl_glfw"
 import "./odin-imgui/imgui_impl_opengl3"
 
 /*
-	Render command bar
+* Unify where the inputs are handled
 */
 
 window : glfw.WindowHandle
 
-rect4i16 :: struct {
-	l, t, r, b: f32
-}
+rect4i16 :: struct { l, t, r, b: f32 }
 color_t :: [4]f32
-
 vec3 :: [3]f32
+vec2 :: [3]f32
 
 
 window_height :i32= 800
@@ -41,6 +39,7 @@ rect_instance :: struct  #packed {
 }
 
 CursorGl :: struct {
+    program_id : u32,
 	cursor_buf, vao : u32,
 	cursor          : Cursor,
 }
@@ -53,49 +52,20 @@ Cursor :: struct {
 app : app_state
 
 app_state :: struct{
-    font_info : stbtt.fontinfo,
-
-    glyph_atlas_items : [127]glyph_atlas_item,
-    glyph_atlas_width  : i32 ,
-    glyph_atlas_height : i32 ,
-    glyph_atlas_texture : u32,
-
-    rect_buffer : [dynamic]rect_instance,
-    rect_instances_vbo : u32,
-
-    vao : u32,
-    program_id: u32,
-    pos_x  :f32,
-    pos_y  :f32,
-    font_size_pt : f32,
-    gap_buf      : GapBuf,
-
-    cursor_program_id : u32,
-
-    cursor : CursorGl,
-	index_rect : rect_instance,
-
-	current_x, current_y : f32,
-
-	input : Input,
+	index_rect   : rect_instance,
 
 	open_file : string,
 
+    cursor  : CursorGl,
+	input   : Input,
 	console : Console,
+    gap_buf : GapBuf,
 
-	vim_state : VimState,
-
-
+	using vim_state : VimState,
+	using glyph     : GlyphState, //For font rendering
+	
 }
 
-
-
-glyph_atlas_item :: struct {
-    filled: bool ,
-    tex_coords: rect4i16,
-    glyph_index: i32, 
-    distance_from_baseline_to_top_px: i32,
-}
 
 recalc := false
 scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
@@ -107,7 +77,7 @@ scroll_callback :: proc "c" (window: glfw.WindowHandle, x, y: f64){
     	app.font_size_pt += f32(y)
     	recalc = true
     }else{
-    	app.pos_y += f32(y * 20)
+    	app.pos.y += f32(y * 20)
     }
     //state.world.scale.z += f32(y) * 0.05
     redraw = true
@@ -149,22 +119,14 @@ init_imgui :: proc (){
 
 //only use the x distance of the current index
 render_cursor :: proc(){
-
-
 	using app.cursor
-
 	ret : rect4i16 // ret_i.pos
-
 	ret.l = cursor.x
-
-
 	ret.b = cursor.y + 3 
-
-
 	if app.gap_buf.front == 0{
 		ret.l =0
 	}
-	if app.vim_state.mode == .Insert{
+	if app.mode == .Insert{
 		ret.r = ret.l + 2
 	}else{
 		ret.r = ret.l + 10
@@ -174,7 +136,7 @@ render_cursor :: proc(){
 	//ret.b = ret.t + 15
 
 
-	cursor.color = {1,1,1,1}
+	cursor.color = {0,1,1,1}
     a :f32= 2.0 / f32(window_width)
     b :f32= 2.0 / f32(window_height)
 	proj : [16]f32 = {
@@ -182,9 +144,9 @@ render_cursor :: proc(){
 	};
 	//put cursor_program_id inside CursorGL
 
-	color := color_t{0, 1, 0, 1}
+	color := color_t{1, 0, 0, 1}
 
-    gl.UseProgram(app.cursor_program_id)
+    gl.UseProgram(app.cursor.program_id)
 	vertices := []f32 {
 	    ret.l, ret.t, 0.0, color.r, color.g, color.b, color.a, // top right
 	    ret.l, ret.b, 0.0, color.r, color.g, color.b, color.a, // bottom right
@@ -197,10 +159,12 @@ render_cursor :: proc(){
 
 
 	//gl.ProgramUniform2f(program_id, 0, f32(window_width) / 2.0, f32(window_height) / 2.0);
-	gl.ProgramUniformMatrix4fv(app.cursor_program_id, 0, 1, gl.FALSE,  &proj[0]);
+	gl.ProgramUniformMatrix4fv(app.cursor.program_id, 0, 1, gl.FALSE,  &proj[0]);
     gl.NamedBufferData(cursor_buf, size_of(f32) * 6 * 7, &vertices[0], gl.DYNAMIC_DRAW)
     gl.BindVertexArray(vao)
+	gl.Disable(gl.BLEND);
     gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, 6)
+	gl.Enable(gl.BLEND);
     //gl.DrawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, nil);
 
     gl.UseProgram(0)
@@ -208,13 +172,13 @@ render_cursor :: proc(){
 
 }
 
-render_font :: proc (){
+render_font :: proc (using glyph_state: ^GlyphState, text: string, front: u32){
 
-    using app
-    text := get_string(&gap_buf)
+    //using app
+    //text := get_string(&gap_buf)
 
     coverage_adjustment  :f32 =  0.0
-    text_color : color_t = {1, 1, 1, 1}
+    text_color : color_t = {0, 0, 0, 1}
 
 
 	if redraw{
@@ -237,9 +201,7 @@ render_font :: proc (){
 
 
 	//Keep track of the current position while we process glyph after glyph
-	current_x, current_y = pos_x, f32(pos_y) + math.round(baseline)
-
-
+	current_x, current_y = pos.x, f32(pos.y) + math.round(baseline)
 
 	//iterate over the UTF-8 text codepoint by codepoint. A codepoint is basically 32 bit ID of a character as defined by Unicode
 
@@ -262,21 +224,17 @@ render_font :: proc (){
 
 	    if c == '\n'{
 		//Handle line breaks
-		current_x = pos_x
+		current_x = pos.x
 		current_y += math.round(line_height)
 
 
 	    } else if c == '\t'{
-		current_x +=  2 * font_size_pt
-	    }else{
-
-		horizontal_filter_padding, subpixel_positioning_left_padding : i32 = 1 , 1
-
-		assert(codepoint <=127)
-
-		glyph_atlas := glyph_atlas_items[codepoint] 
-
-		if glyph_atlas.filled && !recalc{
+			current_x +=  2 * font_size_pt
+		}else{
+			horizontal_filter_padding, subpixel_positioning_left_padding : i32 = 1 , 1
+			assert(codepoint <=127)
+			glyph_atlas := glyph_atlas_items[codepoint] 
+			if glyph_atlas.filled && !recalc{
 		    //The atlas item for this codepoint is already filled so we already rasterized the glyph, put it in the relevane data in an atlas item. Everything is already done, so just use the atlas item
 
 		}else
@@ -420,7 +378,7 @@ render_font :: proc (){
 
 		current_x += f32(glyph_advance_width) * font_scale
 	    }
-	    if u32(i) == gap_buf.front-1{
+	    if u32(i) == front-1{
 	    	app.cursor.cursor.x = current_x
 	    	app.cursor.cursor.y = current_y
 	    }
@@ -428,8 +386,15 @@ render_font :: proc (){
     }
 	}
 	{
-	gl.ClearColor(0.25, 0.25, 0.25, 1.0);
+
+	if front == 0{
+		app.cursor.cursor.x = 0
+		app.cursor.cursor.y = 13
+	}
+	gl.ClearColor(0.8, 0.8, 0.8, 1.0);
 	gl.Clear(gl.COLOR_BUFFER_BIT);
+
+	render_cursor()
 
 
 	
@@ -437,7 +402,7 @@ render_font :: proc (){
 	// Allow the GPU driver to create a new buffer storage for each draw command. That way it doesn't have to wait for
 	// the previous draw command to finish to reuse the same buffer storage.
 
-    if gap_buf.gap != gap_buf.total{
+    if len(text)>0{
     	gl.NamedBufferData(rect_instances_vbo, int(len(rect_buffer) * size_of(rect_buffer[0])), &rect_buffer[0], gl.DYNAMIC_DRAW);
     }
 	
@@ -454,9 +419,9 @@ render_font :: proc (){
 	// An integer division causes 1px artifacts in the middle of windows due to a wrong transform.
 	// layout(location = 1) uniform float coverage_adjustment
 	gl.UseProgram(program_id);
-	gl.ProgramUniform2f(program_id, 0, f32(window_width) / 2.0, f32(window_height) / 2.0);
+	gl.ProgramUniform2f(program_id,  0, f32(window_width) / 2.0, f32(window_height) / 2.0);
 	gl.ProgramUniform1ui(program_id, 1, u32(coverage_adjustment));
-	gl.ProgramUniform1ui(program_id, 2, app.gap_buf.front);
+	gl.ProgramUniform1ui(program_id, 2, front);
 	gl.BindTextureUnit(0, glyph_atlas_texture);
 	//gl.BindTexture(gl.TEXTURE_2D, glyph_atlas_texture);
 	//gl.ProgramUniform1i(program_id, 3, i32(glyph_atlas_texture));
@@ -466,7 +431,6 @@ render_font :: proc (){
 	
 	// We don't need the contents of the CPU or GPU buffer anymore
 	gl.InvalidateBufferData(rect_instances_vbo);
-	render_cursor()
 
 
 
@@ -522,17 +486,15 @@ viewport_callback :: proc "c" (window: glfw.WindowHandle, x, y: i32){
 char_callback :: proc "c" (window : glfw.WindowHandle, codepoint: rune){
     context = runtime.default_context()
 
-    if app.vim_state.mode == .Insert{
+    if app.mode == .Normal{
 		if is_down(.SHIFT) && codepoint == ':'{
-			app.vim_state.mode = .Command
-		}else{
-			gapbuf_insert(&app.gap_buf, u8(codepoint))
-			redraw = true
+			app.mode = .Command
 		}
-    }
-    else if app.vim_state.mode == .Normal{
 		if codepoint == 'i'{
-			app.vim_state.mode = .Insert
+			app.mode = .Insert
+		}
+		if codepoint == '/'{
+			app.mode = .ListFiles
 		}
 
 		if codepoint == 'h'{
@@ -555,6 +517,10 @@ char_callback :: proc "c" (window : glfw.WindowHandle, codepoint: rune){
 			gapbuf_frontward(&app.gap_buf)
 			redraw = true
 		}
+	}
+	else if app.mode == .Insert{
+		gapbuf_insert(&app.gap_buf, u8(codepoint))
+		redraw = true
 	}
 }
 
@@ -613,7 +579,7 @@ main :: proc(){
 
     program_id, _ = gl.load_shaders_file("font_vert.glsl", "font_frag.glsl")
 
-    cursor_program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
+    cursor.program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
 
 
     //gl.CreateBuffers(1, &rect_vertices_vbo)
@@ -679,13 +645,16 @@ main :: proc(){
 
     init_console(&app.console)
 
+    app.pos.x = 5
+    app.pos.y = 5
+
     
 	for !glfw.WindowShouldClose(window){
 		glfw.PollEvents()
 
 		process_inputs()
 		//Handle events
-		if vim_state.mode == .Insert{
+		if mode == .Insert{
 			if is_pressed(.F1){
 				im.SetWindowFocusStr("Command"); 
 			}
@@ -726,17 +695,15 @@ main :: proc(){
 		}
 
 		if is_pressed(.ESCAPE){
-			if app.vim_state.mode == .Command{
-				app.vim_state.mode = .Insert
-			}
-			else if app.vim_state.mode == .Insert{
-				app.vim_state.mode = .Normal
-			}
+			gapbuf_backward(&app.gap_buf)
+			app.mode = .Normal
+			redraw = true
 		}
 
 
 
-	render_font()
+	text := get_string(&app.gap_buf)
+	render_font(&app.glyph, text, app.gap_buf.front)
 
 	imgui_impl_opengl3.NewFrame()
 	imgui_impl_glfw.NewFrame()
@@ -781,7 +748,7 @@ main :: proc(){
 			im.Text("Vim Mode")
 			im.TableSetColumnIndex(1)
 
-			vim_val, _ := fmt.enum_value_to_string(vim_state.mode)
+			vim_val, _ := fmt.enum_value_to_string(mode)
 			im.Text(strings.unsafe_string_to_cstring(vim_val))
 			//row, column := gapbuf_get_curr_pos(&app.gap_buf)
 		}
@@ -795,7 +762,7 @@ main :: proc(){
 	open_console:= true
 
 
-	if(vim_state.mode == .Command){
+	if(mode == .Command || mode == .ListFiles){
 		console_draw(&app.console, "Command",&open_console)
 	}
 

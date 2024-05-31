@@ -3,6 +3,7 @@ package main
 import im "./odin-imgui"
 import      "base:runtime"
 import "core:c/libc"
+import "core:os"
 import "core:c"
 import strings "core:strings"
 import "core:fmt"
@@ -17,6 +18,7 @@ VimMode :: enum{
 	Replace,
 	Command,
 	CommandSearch,
+	ListFiles,
 }
 
 VimState :: struct{
@@ -32,8 +34,6 @@ Console :: struct {
 	History        : [dynamic]string,
 	HistoryPos     : int,
 	Commands       : [dynamic]string,
-
-
 	filter : im.TextFilter,
 }
 
@@ -46,10 +46,12 @@ init_console :: proc(using console: ^Console){
 
 	HistoryPos = -1
 
+	/*
 	append(&Commands, "HELP")
 	append(&Commands, "HISTORY")
 	append(&Commands, "CLEAR")
 	append(&Commands, "CLASSIFY")
+	*/
 	//console_add_log(console, "Welcome to ImGui!")
 }
 
@@ -94,7 +96,7 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
     	ConsoleExecCommand(console, cstring(InputBuf));
     	libc.strcpy(InputBuf, "");
 
-    	app.vim_state.mode = .Insert
+    	app.vim_state.mode = .Command
     	reclaim_focus = true;
     }
     // Demonstrate keeping focus on the input box
@@ -156,6 +158,20 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
 
     col_default_text := im.GetStyleColorVec4(.Text);
 
+    if app.vim_state.mode == .ListFiles{
+    	directory := os.get_current_directory()
+
+    	handle, _ := os.open(directory, os.O_RDONLY)
+
+    	files, err := os.read_dir(handle, 20)
+
+    	for file in files{
+    		im.TextUnformatted(strings.unsafe_string_to_cstring(file.name))
+    	}
+
+    }
+
+    /*
     for item in Items{
     	if !im.TextFilter_PassFilter(&filter, strings.unsafe_string_to_cstring(item)) do continue
 
@@ -165,6 +181,12 @@ console_draw :: proc(using console: ^Console, title : string, p_open: ^bool){
     	im.TextUnformatted(strings.unsafe_string_to_cstring(item))
     	im.PopStyleColor()
     }
+    */
+
+
+
+
+
 
     //if copy_to_clipboard do im.LogFinish()
     //if ScrollToBottom do im.SetScrollHere()
