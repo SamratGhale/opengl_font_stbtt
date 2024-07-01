@@ -16,6 +16,9 @@ import "./odin-imgui/imgui_impl_opengl3"
 
 /*
 * Unify where the inputs are handled
+* 
+* Make the editor useable for viewing files
+* Have boxes to hold buffers and render them accordingly
 */
 
 window : glfw.WindowHandle
@@ -120,11 +123,11 @@ init_imgui :: proc (){
 //only use the x distance of the current index
 render_cursor :: proc(){
 	using app.cursor
-	ret : rect4i16 // ret_i.pos
+	ret : rect4i16 
 	ret.l = cursor.x
-	ret.b = cursor.y + 3 
+	ret.b = cursor.y + 6 
+
 	if app.gap_buf.front == 0{
-		ret.l =0
 	}
 	if app.mode == .Insert{
 		ret.r = ret.l + 2
@@ -132,9 +135,7 @@ render_cursor :: proc(){
 		ret.r = ret.l + 10
 	}
 
-	ret.t = ret.b - 15
-	//ret.b = ret.t + 15
-
+	ret.t = ret.b - 25
 
 	cursor.color = {0,1,1,1}
     a :f32= 2.0 / f32(window_width)
@@ -147,6 +148,7 @@ render_cursor :: proc(){
 	color := color_t{1, 0, 0, 1}
 
     gl.UseProgram(app.cursor.program_id)
+
 	vertices := []f32 {
 	    ret.l, ret.t, 0.0, color.r, color.g, color.b, color.a, // top right
 	    ret.l, ret.b, 0.0, color.r, color.g, color.b, color.a, // bottom right
@@ -172,273 +174,6 @@ render_cursor :: proc(){
 
 }
 
-render_font :: proc (using glyph_state: ^GlyphState, text: string, front: u32){
-
-    //using app
-    //text := get_string(&gap_buf)
-
-    coverage_adjustment  :f32 =  0.0
-    text_color : color_t = {0, 0, 0, 1}
-
-
-	if redraw{
-
-    rect_buffer = make([dynamic]rect_instance, 0, 1000)
-    {
-	//put every glyph in text into rect_buffer
-
-	//Get the font metrics, the stbtt_ScaleForMappingEmToPixels() and stbtt_GetFontVMetrics() documentation for details
-
-	//From "Font size in pixels or points" in stb_truetype
-
-	font_size_px := font_size_pt * 1.3333
-	font_scale   := stbtt.ScaleForMappingEmToPixels(&font_info, font_size_px)
-
-	font_ascent, font_descent, font_line_gap :i32= 0, 0, 0
-	stbtt.GetFontVMetrics(&font_info, &font_ascent, &font_descent, &font_line_gap)
-	line_height := f32(font_ascent - font_descent + font_line_gap) * font_scale
-	baseline    := f32(font_ascent) * font_scale
-
-
-	//Keep track of the current position while we process glyph after glyph
-	current_x, current_y = pos.x, f32(pos.y) + math.round(baseline)
-
-	//iterate over the UTF-8 text codepoint by codepoint. A codepoint is basically 32 bit ID of a character as defined by Unicode
-
-	prev_codepoint : rune = 0
-
-	if recalc{
-	    delete(rect_buffer)
-	    rect_buffer = make([dynamic]rect_instance, 0, 1000)
-	}
-
-	for c, i in text {
-	    codepoint := u32(c)
-
-	    //Apply kerning
-	    if prev_codepoint != 0{
-	    	current_x += f32(stbtt.GetCodepointKernAdvance(&font_info, prev_codepoint, c)) * font_scale
-	    }
-
-	    prev_codepoint = c
-
-	    if c == '\n'{
-		//Handle line breaks
-		current_x = pos.x
-		current_y += math.round(line_height)
-
-
-	    } else if c == '\t'{
-			current_x +=  2 * font_size_pt
-		}else{
-			horizontal_filter_padding, subpixel_positioning_left_padding : i32 = 1 , 1
-			assert(codepoint <=127)
-			glyph_atlas := glyph_atlas_items[codepoint] 
-			if glyph_atlas.filled && !recalc{
-		    //The atlas item for this codepoint is already filled so we already rasterized the glyph, put it in the relevane data in an atlas item. Everything is already done, so just use the atlas item
-
-		}else
-		{
-		    glyph_index := stbtt.FindGlyphIndex(&font_info, c)
-
-		    x0, y0, x1, y1 :i32 = 0, 0, 0, 0
-
-		    stbtt.GetGlyphBitmapBox(&font_info, glyph_index, font_scale, font_scale, &x0, &y0, &x1, &y1)
-
-		    glyph_width_px  : i32 = x1 - x0
-		    glyph_height_px : i32 = y1 - y0
-
-		    distance_from_baseline_to_top_px : i32 = -y0
-
-		    //Only render glyphs that actually have some visual representation (skip spaces, etc.)
-
-		    
-		    if glyph_width_px > 0 && glyph_height_px > 0{
-			padded_glyph_width_px : i32 = subpixel_positioning_left_padding + horizontal_filter_padding + glyph_width_px + horizontal_filter_padding
-
-			padded_glyph_height_px : i32 = glyph_height_px
-
-			//Don't use this for anything other than demonstration purposes
-
-			atlas_item_width, atlas_item_height : i32 = 32, 32
-
-			atlas_item_x : i32 = i32(codepoint % u32(glyph_atlas_width / atlas_item_width)) * atlas_item_width
-			atlas_item_y : i32 = i32(codepoint / u32(glyph_atlas_height / atlas_item_height)) * atlas_item_height
-
-			assert(padded_glyph_width_px <= atlas_item_width && padded_glyph_height_px <= atlas_item_height);
-
-
-			horizontal_resolution : i32 = 3
-
-			bitmap_stride : i32 = atlas_item_width * horizontal_resolution
-			bitmap_size   : uint = uint(bitmap_stride * atlas_item_height)
-			glyph_bitmap, _  :=  mem.alloc_bytes(int(bitmap_size))
-
-			glyph_offset_x := (subpixel_positioning_left_padding + horizontal_filter_padding) * horizontal_resolution
-
-			stbtt.MakeGlyphBitmap(&font_info,
-					      &glyph_bitmap[glyph_offset_x],
-					      atlas_item_width * horizontal_resolution,
-					      atlas_item_height,
-					      bitmap_stride,
-					      font_scale * f32(horizontal_resolution),
-					      font_scale,
-					      glyph_index
-					     )
-
-			atlas_item_bitmap, _ := mem.alloc_bytes(int(bitmap_size))
-
-
-			filter_weights : [5]u8 = { 0x08, 0x4D, 0x56, 0x4D, 0x08 };
-
-
-
-			for y in 0..<padded_glyph_height_px{
-
-			    x_end : i32 = padded_glyph_width_px * horizontal_resolution -1
-
-			    for x in 4..<x_end{
-				filter_weight_index : i32 =  0
-				sum :  i32
-				kernel_x_end : i32 = (x == x_end -1)  ? x + 1 : x + 2
-
-
-
-				for kernel_x in x-2..=kernel_x_end{
-
-				    assert(kernel_x >= 0 && kernel_x < x_end + 1)
-				    assert(y        >= 0 && y        < padded_glyph_height_px)
-
-				    offset :i32 = kernel_x + y * bitmap_stride
-				    assert(offset >= 0 && uint(offset) < bitmap_size)
-
-
-				    //fmt.println(i32(glyph_bitmap[offset]) * filter_weights[filter_weight_index])
-
-				    sum += i32(i32(glyph_bitmap[offset]) * i32(filter_weights[filter_weight_index]))
-				    filter_weight_index += 1
-				}
-				sum = sum / 255
-				atlas_item_bitmap[x + y * bitmap_stride] = ( sum> 255) ? 255: u8(sum)
-			    }
-			}
-
-			mem.free_bytes(glyph_bitmap)
-
-			gl.TextureSubImage2D(glyph_atlas_texture, 0, atlas_item_x, atlas_item_y, atlas_item_width, atlas_item_height, gl.RGB, gl.UNSIGNED_BYTE, rawptr(&atlas_item_bitmap[0]))
-
-			mem.free_bytes(atlas_item_bitmap)
-			glyph_atlas.tex_coords.l     = f32(atlas_item_x)
-			glyph_atlas.tex_coords.t     = f32(atlas_item_y)
-			glyph_atlas.tex_coords.r     = f32(atlas_item_x + padded_glyph_width_px)
-			glyph_atlas.tex_coords.b     = f32(atlas_item_y + padded_glyph_height_px)
-		    } else {
-			glyph_atlas.tex_coords.l  = -1 
-			glyph_atlas.tex_coords.t  = -1 
-			glyph_atlas.tex_coords.r  = -1 
-			glyph_atlas.tex_coords.b  = -1 
-		    }
-
-		    glyph_atlas.glyph_index = glyph_index
-		    glyph_atlas.distance_from_baseline_to_top_px = distance_from_baseline_to_top_px
-		    glyph_atlas.filled      = true
-		    glyph_atlas_items[codepoint] = glyph_atlas
-		}
-
-		glyph_advance_width, glyph_left_side_bearing : i32 = 0, 0
-
-		stbtt.GetGlyphHMetrics(&font_info, glyph_atlas.glyph_index, &glyph_advance_width, &glyph_left_side_bearing)
-
-		if glyph_atlas.tex_coords.l != -1{
-
-		    glyph_pos_x    :f32 = current_x + (f32(glyph_left_side_bearing) * font_scale) 
-
-		    glyph_pos_x_px, glyph_pos_x_subpixel_shift :f32= math.modf_f32(glyph_pos_x)
-
-
-		    glyph_pos_y_px :f32 = current_y - f32(glyph_atlas.distance_from_baseline_to_top_px)
-		    glyph_width_with_horiz_filter_padding :i32 = i32(glyph_atlas.tex_coords.r - glyph_atlas.tex_coords.l)
-		    glyph_height    :i32 = i32(glyph_atlas.tex_coords.b - glyph_atlas.tex_coords.t)
-
-		    r :  rect_instance 
-
-		    r.pos.l = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding));;
-		    r.pos.t = f32(glyph_pos_y_px);
-		    r.pos.r = f32(glyph_pos_x_px - f32(subpixel_positioning_left_padding + horizontal_filter_padding) + f32(glyph_width_with_horiz_filter_padding))
-		    r.pos.b = f32(glyph_pos_y_px + f32(glyph_height));
-
-		    r.subpixel_shift = glyph_pos_x_subpixel_shift;
-		    r.tex_coords     = glyph_atlas.tex_coords;
-		    r.color          = text_color;
-		    r.index          = u32(i+1)
-
-
-		    append(&rect_buffer, r)
-		}
-
-		current_x += f32(glyph_advance_width) * font_scale
-	    }
-	    if u32(i) == front-1{
-	    	app.cursor.cursor.x = current_x
-	    	app.cursor.cursor.y = current_y
-	    }
-	}
-    }
-	}
-	{
-
-	if front == 0{
-		app.cursor.cursor.x = 0
-		app.cursor.cursor.y = 13
-	}
-	gl.ClearColor(0.8, 0.8, 0.8, 1.0);
-	gl.Clear(gl.COLOR_BUFFER_BIT);
-
-	render_cursor()
-
-
-	
-	// Upload the rect buffer to the GPU.
-	// Allow the GPU driver to create a new buffer storage for each draw command. That way it doesn't have to wait for
-	// the previous draw command to finish to reuse the same buffer storage.
-
-    if len(text)>0{
-    	gl.NamedBufferData(rect_instances_vbo, int(len(rect_buffer) * size_of(rect_buffer[0])), &rect_buffer[0], gl.DYNAMIC_DRAW);
-    }
-	
-	// Setup pre-multiplied alpha blending (that's why the source factor is GL_ONE) with dual source blending so we can blend
-	// each subpixel individually for subpixel anti-aliased glyph rendering (that's what GL_ONE_MINUS_SRC1_COLOR does).
-	gl.Enable(gl.BLEND);
-	gl.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC1_COLOR);
-
-
-	
-	gl.BindVertexArray(vao);
-	// layout(location = 0) uniform vec2 half_viewport_size
-	// Note: Do a float division on window_width and window_height to properly handle uneven window dimensions.
-	// An integer division causes 1px artifacts in the middle of windows due to a wrong transform.
-	// layout(location = 1) uniform float coverage_adjustment
-	gl.UseProgram(program_id);
-	gl.ProgramUniform2f(program_id,  0, f32(window_width) / 2.0, f32(window_height) / 2.0);
-	gl.ProgramUniform1ui(program_id, 1, u32(coverage_adjustment));
-	gl.ProgramUniform1ui(program_id, 2, front);
-	gl.BindTextureUnit(0, glyph_atlas_texture);
-	//gl.BindTexture(gl.TEXTURE_2D, glyph_atlas_texture);
-	//gl.ProgramUniform1i(program_id, 3, i32(glyph_atlas_texture));
-	gl.DrawArraysInstanced(gl.TRIANGLES, 0, 6, i32(len(rect_buffer)));
-	gl.UseProgram(0);
-	gl.BindVertexArray(0);
-	
-	// We don't need the contents of the CPU or GPU buffer anymore
-	gl.InvalidateBufferData(rect_instances_vbo);
-
-
-
-	//glfw.SwapBuffers(window)
-    }
-    redraw = false
-    recalc = false
-}
 
 
 gl_debug_callback ::   proc "c" (src : u32, type: u32, id: u32, severity: u32, length: i32, msg: cstring, userParam: rawptr){
@@ -487,36 +222,7 @@ char_callback :: proc "c" (window : glfw.WindowHandle, codepoint: rune){
     context = runtime.default_context()
 
     if app.mode == .Normal{
-		if is_down(.SHIFT) && codepoint == ':'{
-			app.mode = .Command
-		}
-		if codepoint == 'i'{
-			app.mode = .Insert
-		}
-		if codepoint == '/'{
-			app.mode = .ListFiles
-		}
-
-		if codepoint == 'h'{
-			time.sleep(90000000)
-			gapbuf_backward(&app.gap_buf)
-			redraw = true
-		}
-		if codepoint == 'k'{
-			gapbuf_up(&app.gap_buf)
-			redraw = true
-		}
-		if codepoint == 'j'{
-			time.sleep(90000000)
-			gapbuf_down(&app.gap_buf)
-			redraw = true
-		}
-
-		if codepoint == 'l'{
-			time.sleep(90000000)
-			gapbuf_frontward(&app.gap_buf)
-			redraw = true
-		}
+        vim_process_char_normal_mode(codepoint);
 	}
 	else if app.mode == .Insert{
 		gapbuf_insert(&app.gap_buf, u8(codepoint))
@@ -581,23 +287,11 @@ main :: proc(){
 
     cursor.program_id, _ = gl.load_shaders_file("cursor_vert.glsl", "cursor_frag.glsl")
 
-
-    //gl.CreateBuffers(1, &rect_vertices_vbo)
-    //gl.NamedBufferStorage(rect_vertices_vbo, size_of(rect_vertices), &rect_vertices[0], 0)
-
     gl.CreateBuffers(1, &rect_instances_vbo)
     gl.CreateVertexArrays(1, &vao)
     //gl.VertexArrayVertexBuffer(vao, 0, rect_vertices_vbo, 0, size_of(index_xy))
     gl.VertexArrayVertexBuffer(vao, 0, rect_instances_vbo, 0, size_of(rect_instance));   // Set data source 1 to rect_instances_vbo, with offset 0 and proper stride
     gl.VertexArrayBindingDivisor(vao, 0, 1);  // Advance data source 1 every 1 instance instead of for every vertex (3rd argument is 1 instead of 0)
-    // layout(location = 0) in uvec2 ltrb_index
-    /*
-    gl.EnableVertexArrayAttrib(vao, 0);     // read ltrb_index from a data source
-    gl.VertexArrayAttribBinding(vao, 0, 0);  // read from data source 0
-    gl.VertexArrayAttribIFormat(vao, 0, 2, gl.UNSIGNED_INT, 0);  // read 2 unsigned shorts starting at offset 0 and feed it into the vertex shader as integers instead of float (that's what the I means in glVertexArrayAttribIFormat)
-
-    */
-    // layout(location = 1) in vec4  rect_ltrb
     gl.EnableVertexArrayAttrib( vao, 0);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 0, 0);  // read from data source 1
     gl.VertexArrayAttribFormat( vao, 0, 4, gl.FLOAT, false , 0);
@@ -612,19 +306,12 @@ main :: proc(){
     gl.EnableVertexArrayAttrib( vao, 2);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 2, 0);  // read from data source 1
 
-    // read 4 unsigned bytes starting at the offset of the "color" member, convert them to float and normalize the value range 0..255 to 0..1.
     gl.VertexArrayAttribFormat( vao, 2, 4, gl.FLOAT, false, u32(offset_of(rect_instance, color)));  
-    // layout(location = 4) in float rect_subpixel_shift
-    /*
-    gl.EnableVertexArrayAttrib( vao, 4);     // read it from a data source
-    gl.VertexArrayAttribBinding(vao, 4, 1);  // read from data source 1
-    gl.VertexArrayAttribIFormat( vao, 4, 1, gl.UNSIGNED_INT, u32(offset_of(rect_instance, index)));
-    */
 
 
-    gl.EnableVertexArrayAttrib( vao, 3);     // read it from a data source
+    gl.EnableVertexArrayAttrib (vao, 3);     // read it from a data source
     gl.VertexArrayAttribBinding(vao, 3, 0);  // read from data source 1
-    gl.VertexArrayAttribFormat( vao, 3, 1, gl.FLOAT, false , u32(offset_of(rect_instance, subpixel_shift)));
+    gl.VertexArrayAttribFormat (vao, 3, 1, gl.FLOAT, false , u32(offset_of(rect_instance, subpixel_shift)));
 
 
 
@@ -636,7 +323,7 @@ main :: proc(){
 	init_imgui()
 
 	redraw = true
-    font_data, _ := os.read_entire_file_from_filename("UbuntuMono-R.ttf")
+    font_data, _ := os.read_entire_file_from_filename("C:/Windows/Fonts/Consola.ttf")
     stbtt.InitFont(&font_info, &font_data[0], 0)
 
 
@@ -645,133 +332,88 @@ main :: proc(){
 
     init_console(&app.console)
 
-    app.pos.x = 5
-    app.pos.y = 5
 
     
 	for !glfw.WindowShouldClose(window){
-		glfw.PollEvents()
+		glfw.WaitEvents()
 
 		process_inputs()
-		//Handle events
-		if mode == .Insert{
-			if is_pressed(.F1){
-				im.SetWindowFocusStr("Command"); 
-			}
-			if is_down(.BACK){
-				time.sleep(90000000)
-				gapbuf_backspace(&app.gap_buf)
-				redraw = true
-			}
-			if is_pressed(.ENTER){
-				gapbuf_insert(&app.gap_buf, '\n')
-				redraw = true
-			}
-			if is_pressed(.TAB){
-				gapbuf_insert(&app.gap_buf, '\t')
-				redraw = true
-			}
-			if is_down(.ACTION_LEFT){
-				time.sleep(90000000)
-				gapbuf_backward(&app.gap_buf)
-				redraw = true
-			}
-			if is_pressed(.ACTION_UP){
-				gapbuf_up(&app.gap_buf)
-				redraw = true
-			}
-			if is_pressed(.ACTION_DOWN){
-				time.sleep(90000000)
-				gapbuf_down(&app.gap_buf)
-				redraw = true
-			}
-
-			if is_down(.ACTION_RIGHT){
-				time.sleep(90000000)
-				gapbuf_frontward(&app.gap_buf)
-				redraw = true
-			}
-
-		}
-
-		if is_pressed(.ESCAPE){
-			gapbuf_backward(&app.gap_buf)
-			app.mode = .Normal
-			redraw = true
-		}
+        vim_process_key()
 
 
 
-	text := get_string(&app.gap_buf)
-	render_font(&app.glyph, text, app.gap_buf.front)
 
-	imgui_impl_opengl3.NewFrame()
-	imgui_impl_glfw.NewFrame()
-	im.NewFrame()
+	    text := get_string(&app.gap_buf)
+	    render_font(&app.glyph, text, app.gap_buf.front)
 
-
-	if im.Begin("Info stuffs", nil, {}){
-
-		flags := im.TableFlags_Borders | im.TableFlags_RowBg 
-
-		if im.BeginTable("Info", 2, flags){
-			io : = im.GetIO()
-			im.TableSetupColumn("Front", nil)
-			im.TableSetupColumn("Value", nil)
-			im.TableNextRow()
-			im.TableSetColumnIndex(0)
-			im.Text("Front")
-			im.TableSetColumnIndex(1)
-			im.Text("%d\n", app.gap_buf.front)
-
-			im.TableNextRow()
-			im.TableSetColumnIndex(0)
-			im.Text("Gap size")
-			im.TableSetColumnIndex(1)
-			im.Text("%d\n", app.gap_buf.gap)
-
-			im.TableNextRow()
-			im.TableSetColumnIndex(0)
-			im.Text("Total size")
-			im.TableSetColumnIndex(1)
-			im.Text("%d\n", app.gap_buf.total)
-
-			im.TableNextRow()
-			im.TableSetColumnIndex(0)
-			im.Text("Pos ")
-			im.TableSetColumnIndex(1)
-			row, column := gapbuf_get_curr_pos(&app.gap_buf)
-			im.Text("%d, %d\n", row, column)
-
-			im.TableNextRow()
-			im.TableSetColumnIndex(0)
-			im.Text("Vim Mode")
-			im.TableSetColumnIndex(1)
-
-			vim_val, _ := fmt.enum_value_to_string(mode)
-			im.Text(strings.unsafe_string_to_cstring(vim_val))
-			//row, column := gapbuf_get_curr_pos(&app.gap_buf)
-		}
-
-		im.EndTable()
-
-		//im.ShowDemoWindow()
-	}
-	im.End()
-
-	open_console:= true
+	    imgui_impl_opengl3.NewFrame()
+	    imgui_impl_glfw.NewFrame()
+	    im.NewFrame()
 
 
-	if(mode == .Command || mode == .ListFiles){
-		console_draw(&app.console, "Command",&open_console)
-	}
+	    if im.Begin("Info stuffs", nil, {}){
 
-	im.Render()
-	imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
-	glfw.SwapBuffers(window)
+		    flags := im.TableFlags_Borders | im.TableFlags_RowBg 
+
+		    if im.BeginTable("Info", 2, flags){
+			    io : = im.GetIO()
+			    im.TableSetupColumn("Front", nil)
+			    im.TableSetupColumn("Value", nil)
+			    im.TableNextRow()
+			    im.TableSetColumnIndex(0)
+			    im.Text("Front")
+			    im.TableSetColumnIndex(1)
+			    im.Text("%d\n", app.gap_buf.front)
+
+			    im.TableNextRow()
+			    im.TableSetColumnIndex(0)
+			    im.Text("Gap size")
+			    im.TableSetColumnIndex(1)
+			    im.Text("%d\n", app.gap_buf.gap)
+
+			    im.TableNextRow()
+			    im.TableSetColumnIndex(0)
+			    im.Text("Total size")
+			    im.TableSetColumnIndex(1)
+			    im.Text("%d\n", app.gap_buf.total)
+
+			    im.TableNextRow()
+			    im.TableSetColumnIndex(0)
+			    im.Text("Pos ")
+			    im.TableSetColumnIndex(1)
+			    row, column := gapbuf_get_curr_pos(&app.gap_buf)
+			    im.Text("%d, %d\n", row, column)
+
+			    im.TableNextRow()
+			    im.TableSetColumnIndex(0)
+			    im.Text("Vim Mode")
+			    im.TableSetColumnIndex(1)
+
+                vim_val, _ := fmt.enum_value_to_string(mode)
+			    im.Text(strings.unsafe_string_to_cstring(vim_val))
+			    //row, column := gapbuf_get_curr_pos(&app.gap_buf)
+                /*
+                im.Text("%f\n", app.cursor.cursor.x)
+                im.Text("%f\n", app.cursor.cursor.y)
+                */
+                
+            }
+
+		    im.EndTable()
+
+        }
+        im.End()
+
+	    open_console:= true
 
 
-	// Draw all the rects in the rect_buffer 
+	    if(mode == .Command || mode == .ListFiles){
+		    console_draw(&app.console, "Command",&open_console)
+	    }
+
+	    im.Render()
+	    imgui_impl_opengl3.RenderDrawData(im.GetDrawData())
+	    glfw.SwapBuffers(window)
 
     }
 }

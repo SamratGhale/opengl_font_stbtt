@@ -4,6 +4,8 @@ import "core:mem"
 import "core:os"
 import intr "base:intrinsics"
 import "core:fmt"
+import "core:text/match"
+import "core:unicode/utf8"
 import "core:strings"
 
 GapBuf :: struct {
@@ -46,6 +48,21 @@ gapbuf_init_file :: proc(b: ^GapBuf, file_path: string){
 gapbuf_destroy :: proc(b: ^GapBuf){
     mem.free_bytes(b.buf)
     b.buf = nil
+}
+
+gapbuf_get_next_space :: proc(b: ^GapBuf)-> int{
+
+    str := get_string(b)
+
+    ret : int = 0
+    for c, i in str{
+        if i < int(b.front) do continue
+
+        if match.is_alnum(c) && c != utf8.RUNE_EOF{
+            ret += 1;
+        }
+    }
+    return ret;
 }
 
 //insert at the front of the gap
@@ -160,6 +177,22 @@ get_string :: proc(g: ^GapBuf) -> string{
 	return res
 }
 
+get_spaces :: proc(str : string)->[dynamic]u32{
+	ret := make([dynamic]u32, 0, 10)
+
+	//append(&ret, 0) //always starts with 0
+	for r , i in str{
+		if r == ' ' || r == '\n'{
+            if i < len(str)-1{
+                if str[i+1] == ' '{
+                    continue
+                }
+            }
+			append(&ret, u32(i))
+		}
+	}
+	return ret
+}
 
 
 
@@ -179,6 +212,7 @@ get_rows :: proc(str: string)->[dynamic]u32{
 // Get current row and column
 // Find the length of the previous row
 // move -min(column, len_of_previous_row)
+
 
 gapbuf_up :: proc(b: ^GapBuf){
 	row, column := gapbuf_get_curr_pos(b)
@@ -243,20 +277,63 @@ gapbuf_get_curr_pos :: proc(b: ^GapBuf)-> (u32, u32){
 	return row, column
 }
 
+//W 
+//First get all the spaces in the gapbuf
+//Find the space which is just greater than the front
+//Check if there is a word after that spacce
+//Jump to the space
+gapbuf_jump_next_word :: proc(b: ^GapBuf){
+	str    := get_string(b)
+    spaces := get_spaces(str)
 
+    moved := false
+    for space, i in spaces{
+        if space < b.front do continue
 
+        if i < len(spaces){
+            gapbuf_move(b, i32((space + 1) - b.front))
+            moved = true
+            break
+        }
+    }
 
+    //This could mean that there is no space next so we need to move to the end of the word
+    if !moved{
+        // add 
+        i : int = gapbuf_get_next_space(b);
+        gapbuf_move(b, i32(i)-1)
+    }
+}
 
+//B
+gapbuf_jump_prev_word :: proc(b: ^GapBuf){
+	str := get_string(b)
+    spaces := get_spaces(str)
 
+    if len(spaces) == 0{
+        gapbuf_move(b, -i32(b.front))
+        return 
+    }
 
+    #reverse for space, i in spaces{
+        if space > b.front do continue
 
+        if i < len(spaces){
+            space_to_move := space + 1
 
+            if space_to_move != b.front{
+                diff := b.front - space_to_move
+                gapbuf_move(b, -i32(diff))
+            }else{
+                new_space_to_move :u32= 0
+                if i != 0{
+                    new_space_to_move = spaces[i-1] + 1 
+                }
+                diff := b.front - new_space_to_move
+                gapbuf_move(b, -i32(diff))
+            }
 
-
-
-
-
-
-
-
-
+            break
+        }
+    }
+}

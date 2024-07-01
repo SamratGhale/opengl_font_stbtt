@@ -1,0 +1,7 @@
+Instead of moving the gap buffer (which takes memory allocations and mem copy)
+We have a cursor which gets displayed and gets used when moving around
+
+When we actually wanna do insertation (when in insert mode) we actually move the gap to the cursor
+
+TODOS
+    VIM commands
